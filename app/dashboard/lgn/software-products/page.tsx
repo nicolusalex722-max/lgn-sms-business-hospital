@@ -186,9 +186,13 @@ export default function ProductsPage() {
         </p>
 
         <Pagination
-          currentPage={page}
+          page={page}
           totalPages={totalPages}
+          pageSize={PAGE_SIZE}
+          totalCount={filtered.length}
+          itemLabel="products"
           onPageChange={setPage}
+          onPageSizeChange={() => {}}
         />
       </div>
 

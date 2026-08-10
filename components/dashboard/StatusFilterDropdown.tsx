@@ -10,7 +10,10 @@ interface StatusFilterDropdownProps {
   onChange: (value: string) => void;
 }
 
-export default function StatusFilterDropdown({ value, onChange }: StatusFilterDropdownProps) {
+export default function StatusFilterDropdown({
+  value,
+  onChange,
+}: StatusFilterDropdownProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -35,7 +38,9 @@ export default function StatusFilterDropdown({ value, onChange }: StatusFilterDr
         <span className="flex-1 text-left text-slate-700">
           {value === "All" ? "All Statuses" : value}
         </span>
-        <ChevronDown className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
+        <ChevronDown
+          className={`w-4 h-4 text-slate-400 shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+        />
       </button>
 
       {open && (

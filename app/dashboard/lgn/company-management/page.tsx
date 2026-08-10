@@ -4,21 +4,46 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Plus, Tags } from "lucide-react";
 import CompanyStatCards from "@/components/lgn-components/Companystatcards";
-import CompanyTable,{ Company } from "@/components/lgn-components/Companytable";
+import CompanyTable, {
+  Company,
+} from "@/components/lgn-components/Companytable";
 import CompanyEditForm from "@/components/lgn-components/Companyeditform";
 import SubscribeCompanyModal from "@/components/lgn-components/Subscribeccompanymodal";
 import Modal from "@/components/dashboard/Modal";
 import Pagination from "@/components/dashboard/Pegination";
-import FilterDropdown from "@/components/dashboard/StatusFilterDropdown";
-
+import FilterDropdown from "@/components/dashboard/Filterdropdown";
 const PAGE_SIZE = 10;
 const TYPE_OPTIONS = ["Business", "Education", "Hospital"];
 
 const INITIAL_DATA: Company[] = [
-  { id: "co-001", name: "City Electronics", businessType: "Business", email: "info@cityelectronics.co.tz", status: "Active" },
-  { id: "co-002", name: "Ifakara Secondary School", businessType: "Education", email: "admin@ifakarasec.ac.tz", status: "Active" },
-  { id: "co-003", name: "Mwenge Traders", businessType: "Business", email: "sales@mwengetraders.co.tz", status: "Inactive" },
-  { id: "co-004", name: "St. Mary's Academy", businessType: "Education", email: "info@stmarys.ac.tz", status: "Active" },
+  {
+    id: "co-001",
+    name: "City Electronics",
+    businessType: "Business",
+    email: "info@cityelectronics.co.tz",
+    status: "Active",
+  },
+  {
+    id: "co-002",
+    name: "Ifakara Secondary School",
+    businessType: "Education",
+    email: "admin@ifakarasec.ac.tz",
+    status: "Active",
+  },
+  {
+    id: "co-003",
+    name: "Mwenge Traders",
+    businessType: "Business",
+    email: "sales@mwengetraders.co.tz",
+    status: "Inactive",
+  },
+  {
+    id: "co-004",
+    name: "St. Mary's Academy",
+    businessType: "Education",
+    email: "info@stmarys.ac.tz",
+    status: "Active",
+  },
 ];
 
 export default function CompaniesPage() {
@@ -30,14 +55,18 @@ export default function CompaniesPage() {
   const [editingCompany, setEditingCompany] = useState<Company | null>(null);
 
   const [subscribeModalOpen, setSubscribeModalOpen] = useState(false);
-  const [subscribingCompany, setSubscribingCompany] = useState<Company | null>(null);
+  const [subscribingCompany, setSubscribingCompany] = useState<Company | null>(
+    null,
+  );
 
   const stats = useMemo(() => {
     return {
       total: companies.length,
       active: companies.filter((c) => c.status === "Active").length,
-      businessCount: companies.filter((c) => c.businessType === "Business").length,
-      schoolCount: companies.filter((c) => c.businessType === "Education").length,
+      businessCount: companies.filter((c) => c.businessType === "Business")
+        .length,
+      schoolCount: companies.filter((c) => c.businessType === "Education")
+        .length,
     };
   }, [companies]);
 
@@ -103,7 +132,9 @@ export default function CompaniesPage() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-800">Company Management</h1>
+          <h1 className="text-2xl font-semibold text-slate-800">
+            Company Management
+          </h1>
           <p className="text-sm text-slate-500 mt-1">
             Manage registered companies and their subscriptions
           </p>
@@ -153,20 +184,37 @@ export default function CompaniesPage() {
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
         <p className="text-xs text-slate-500">
           Showing {filtered.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}
-          &ndash;{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
+          &ndash;{Math.min(page * PAGE_SIZE, filtered.length)} of{" "}
+          {filtered.length}
         </p>
-        <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          pageSize={PAGE_SIZE}
+          totalCount={filtered.length}
+          itemLabel="products"
+          onPageChange={setPage}
+          onPageSizeChange={() => {}}
+        />
       </div>
 
       {/* Edit modal (quick edit — full creation flow is the /new page) */}
       <Modal open={editModalOpen} onClose={closeEdit} title="Edit Company">
         {editingCompany && (
-          <CompanyEditForm company={editingCompany} onSubmit={handleEditSubmit} onCancel={closeEdit} />
+          <CompanyEditForm
+            company={editingCompany}
+            onSubmit={handleEditSubmit}
+            onCancel={closeEdit}
+          />
         )}
       </Modal>
 
       {/* Subscribe / billing modal */}
-      <Modal open={subscribeModalOpen} onClose={closeSubscribe} title="Manage Subscription">
+      <Modal
+        open={subscribeModalOpen}
+        onClose={closeSubscribe}
+        title="Manage Subscription"
+      >
         {subscribingCompany && (
           <SubscribeCompanyModal
             company={subscribingCompany}
