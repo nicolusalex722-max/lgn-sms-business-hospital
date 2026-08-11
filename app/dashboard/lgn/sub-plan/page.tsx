@@ -318,18 +318,10 @@ const handleDelete = async (
         }
       />
 
-      {/* Loading */}
-      {loading ? (
-        <div className="rounded-xl border border-slate-200 bg-white px-6 py-12 text-center">
-          <p className="text-sm text-slate-500">
-            Loading subscription plans...
-          </p>
-        </div>
-      ) : (
-        <>
           {/* Table */}
           <SubscriptionTable
             subscriptions={paginated}
+            loading={loading}
             onEdit={openEditModal}
             onDelete={handleDelete}
           />
@@ -361,8 +353,6 @@ const handleDelete = async (
               onPageSizeChange={() => {}}
             />
           </div>
-        </>
-      )}
 
       {/* Add / Edit Modal */}
       <Modal
