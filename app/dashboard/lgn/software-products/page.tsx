@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Plus } from "lucide-react";
+import { toast } from "sonner";
 
 import { useProducts } from "@/hooks/use-products";
 import type { Product } from "@/lib/types";
@@ -16,9 +17,7 @@ import Pagination from "@/components/dashboard/Pegination";
 const PAGE_SIZE = 10;
 
 export default function ProductsPage() {
-  /* ------------------------------------------------------------------------ */
-  /* PRODUCTS STATE                                                           */
-  /* ------------------------------------------------------------------------ */
+  // PRODUCTS STATE                                                           
 
   const {
     products,
@@ -29,24 +28,18 @@ export default function ProductsPage() {
     deleteProduct,
   } = useProducts();
 
-  /* ------------------------------------------------------------------------ */
-  /* FILTER STATE                                                             */
-  /* ------------------------------------------------------------------------ */
+  // FILTER STATE                                                             
 
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
 
-  /* ------------------------------------------------------------------------ */
-  /* MODAL STATE                                                              */
-  /* ------------------------------------------------------------------------ */
+  // MODAL STATE                                                              
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] =
     useState<Product | null>(null);
 
-  /* ------------------------------------------------------------------------ */
-  /* PAGINATION                                                               */
-  /* ------------------------------------------------------------------------ */
+  // PAGINATION                                                               
 
   const [page, setPage] = useState(1);
 
@@ -87,9 +80,7 @@ export default function ProductsPage() {
     return filtered.slice(start, start + PAGE_SIZE);
   }, [filtered, page]);
 
-  /* ------------------------------------------------------------------------ */
-  /* MODAL                                                                    */
-  /* ------------------------------------------------------------------------ */
+  // MODAL                                                                    
 
   const openAddModal = () => {
     setEditingProduct(null);
@@ -106,9 +97,7 @@ export default function ProductsPage() {
     setEditingProduct(null);
   };
 
-  /* ------------------------------------------------------------------------ */
-  /* FORM SUBMIT                                                              */
-  /* ------------------------------------------------------------------------ */
+  // FORM SUBMIT                                                              
 
   const handleSubmit = async (data: Parameters<typeof createProduct>[0]) => {
     if (editingProduct) {
@@ -118,12 +107,35 @@ export default function ProductsPage() {
     return createProduct(data);
   };
 
-  /* ------------------------------------------------------------------------ */
-  /* DELETE                                                                   */
-  /* ------------------------------------------------------------------------ */
+  // DELETE                                                                   */
 
-  const handleDelete = async (id: string) => {
-    return deleteProduct(id);
+  const handleDelete = async (
+    id: string
+  ) => {
+    try {
+      const result = await deleteProduct(id);
+  
+      if (!result?.success) {
+        toast.error(
+          result?.error ?? "Failed to delete product."
+        );
+  
+        return;
+      }
+  
+      toast.success(
+        "Product deleted successfully."
+      );
+    } catch (error) {
+      console.error(
+        "Product deletion error:",
+        error
+      );
+  
+      toast.error(
+        "Failed to delete product."
+      );
+    }
   };
 
   return (

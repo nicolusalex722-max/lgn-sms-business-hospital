@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useState } from "react";
@@ -52,27 +51,23 @@ function ProductTableSkeleton() {
   return (
     <div className="w-full overflow-hidden rounded-xl border border-slate-200">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px]">
+        <table className="w-full min-w-190">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr>
               <th className="w-12 px-4 py-3">
                 <div className="h-4 w-4 rounded bg-slate-200 animate-pulse" />
               </th>
 
-              {[
-                "Product Name",
-                "Type",
-                "Description",
-                "Status",
-                "Actions",
-              ].map((heading) => (
-                <th
-                  key={heading}
-                  className="px-4 py-3 text-left text-xs font-semibold text-slate-500"
-                >
-                  {heading}
-                </th>
-              ))}
+              {["Product Name", "Type", "Description", "Status", "Actions"].map(
+                (heading) => (
+                  <th
+                    key={heading}
+                    className="px-4 py-3 text-left text-xs font-semibold text-slate-500"
+                  >
+                    {heading}
+                  </th>
+                ),
+              )}
             </tr>
           </thead>
 
@@ -122,12 +117,11 @@ export default function ProductTable({
 }: ProductTableProps) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const allSelected =
-    products.length > 0 && selected.size === products.length;
+  const allSelected = products.length > 0 && selected.size === products.length;
 
   const toggleAll = () => {
     setSelected(
-      allSelected ? new Set() : new Set(products.map((product) => product.id))
+      allSelected ? new Set() : new Set(products.map((product) => product.id)),
     );
   };
 
@@ -151,7 +145,7 @@ export default function ProductTable({
 
   if (products.length === 0) {
     return (
-      <div className="flex min-h-[240px] items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
+      <div className="flex min-h-60 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50/50">
         <div className="text-center">
           <p className="text-sm font-medium text-slate-600">
             No products found
@@ -168,7 +162,7 @@ export default function ProductTable({
   return (
     <div className="w-full overflow-hidden rounded-xl border border-slate-200 bg-white">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[760px]">
+        <table className="w-full min-w-190">
           <thead className="border-b border-slate-200 bg-slate-50">
             <tr>
               <th className="w-12 px-4 py-3 text-left">
@@ -269,8 +263,8 @@ export default function ProductTable({
       {selected.size > 0 && (
         <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-4 py-3">
           <p className="text-xs font-medium text-slate-600">
-            {selected.size}{" "}
-            {selected.size === 1 ? "product" : "products"} selected
+            {selected.size} {selected.size === 1 ? "product" : "products"}{" "}
+            selected
           </p>
 
           <button
@@ -285,4 +279,3 @@ export default function ProductTable({
     </div>
   );
 }
-

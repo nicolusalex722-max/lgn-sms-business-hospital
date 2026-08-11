@@ -1,6 +1,11 @@
 "use client";
 
-import { useMemo, useState, useEffect } from "react";
+import {
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
+
 import {
   Layers,
   CheckCircle2,
@@ -8,129 +13,178 @@ import {
   AlertTriangle,
   Plus,
 } from "lucide-react";
+import { toast } from "sonner";
 import StatCard from "@/components/dashboard/StatCard";
 import SubscriptionToolbar from "@/components/dashboard/SubscriptionToolbar";
-import SubscriptionTable, {
-  Subscription,
-} from "@/components/dashboard/SubscriptionTable";
+import SubscriptionTable from "@/components/dashboard/SubscriptionTable";
 import SubscriptionForm from "@/components/dashboard/SubscriptionForm";
 import Pagination from "@/components/dashboard/Pegination";
 import Modal from "@/components/dashboard/Modal";
 
+import type { Subscription } from "@/lib/types";
+import type { SubscriptionFormData } from "@/lib/validations/sub-plan-schema";
+
+import { useSubscriptions } from "@/hooks/use-subscriptions";
+
 const PAGE_SIZE = 7;
 
-const INITIAL_DATA: Subscription[] = [
-  {
-    id: "sub-001",
-    plan: "Premium",
-    status: "Active",
-    amount: 150000,
-    billingCycle: "Monthly",
-    startDate: "2026-05-01",
-  },
-  {
-    id: "sub-002",
-    plan: "Basic",
-    status: "Trial",
-    amount: 0,
-    billingCycle: "Monthly",
-    startDate: "2026-07-20",
-  },
-  {
-    id: "sub-003",
-    plan: "Enterprise",
-    status: "Expired",
-    amount: 500000,
-    billingCycle: "Yearly",
-    startDate: "2025-06-15",
-  },
-  {
-    id: "sub-004",
-    plan: "Starter",
-    status: "Active",
-    amount: 25000,
-    billingCycle: "Monthly",
-    startDate: "2026-06-10",
-  },
-  {
-    id: "sub-005",
-    plan: "Standard",
-    status: "Active",
-    amount: 60000,
-    billingCycle: "Monthly",
-    startDate: "2026-04-02",
-  },
-  {
-    id: "sub-006",
-    plan: "Premium",
-    status: "Cancelled",
-    amount: 150000,
-    billingCycle: "Monthly",
-    startDate: "2026-01-15",
-  },
-];
-
 export default function SubscriptionsPage() {
-  const [subscriptions, setSubscriptions] =
-    useState<Subscription[]>(INITIAL_DATA);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("All");
+  const {
+    subscriptions,
+    loading,
+    error,
+    createSubscription,
+    updateSubscription,
+    deleteSubscription,
+  } = useSubscriptions();
 
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editingSub, setEditingSub] = useState<Subscription | null>(null);
+  const [search, setSearch] =
+    useState("");
+
+  const [statusFilter, setStatusFilter] =
+    useState("All");
+
+  const [modalOpen, setModalOpen] =
+    useState(false);
+
+  const [editingSub, setEditingSub] =
+    useState<Subscription | null>(null);
+
+  const [page, setPage] =
+    useState(1);
+
+  // STATS
 
   const stats = useMemo(() => {
     const total = subscriptions.length;
-    const active = subscriptions.filter((s) => s.status === "Active").length;
-    const monthlyRevenue = subscriptions
-      .filter((s) => s.status === "Active")
-      .reduce((sum, s) => {
-        if (s.billingCycle === "Yearly") return sum + s.amount / 12;
-        if (s.billingCycle === "Quarterly") return sum + s.amount / 3;
-        return sum + s.amount;
-      }, 0);
-    const expired = subscriptions.filter((s) => s.status === "Expired").length;
+
+    const active =
+      subscriptions.filter(
+        (subscription) =>
+          subscription.status === "Active"
+      ).length;
+
+    const monthlyRevenue =
+      subscriptions
+        .filter(
+          (subscription) =>
+            subscription.status === "Active"
+        )
+        .reduce((sum, subscription) => {
+          if (
+            subscription.billingCycle ===
+            "Yearly"
+          ) {
+            return (
+              sum +
+              subscription.amount / 12
+            );
+          }
+
+          if (
+            subscription.billingCycle ===
+            "Quarterly"
+          ) {
+            return (
+              sum +
+              subscription.amount / 3
+            );
+          }
+
+          return (
+            sum + subscription.amount
+          );
+        }, 0);
+
+    const expired =
+      subscriptions.filter(
+        (subscription) =>
+          subscription.status === "Expired"
+      ).length;
+
     return {
       total,
       active,
-      monthlyRevenue: Math.round(monthlyRevenue),
+      monthlyRevenue:
+        Math.round(monthlyRevenue),
       expired,
     };
   }, [subscriptions]);
 
+  // FILTER
+
   const filtered = useMemo(() => {
-    return subscriptions.filter((s) => {
-      const matchesSearch = s.plan.toLowerCase().includes(search.toLowerCase());
-      const matchesStatus = statusFilter === "All" || s.status === statusFilter;
-      return matchesSearch && matchesStatus;
-    });
-  }, [subscriptions, search, statusFilter]);
+    const normalizedSearch =
+      search.trim().toLowerCase();
 
-  const [page, setPage] = useState(1);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    return subscriptions.filter(
+      (subscription) => {
+        const matchesSearch =
+          subscription.plan
+            .toLowerCase()
+            .includes(normalizedSearch);
 
-  // Reset to page 1 whenever the search or filter changes
+        const matchesStatus =
+          statusFilter === "All" ||
+          subscription.status ===
+            statusFilter;
+
+        return (
+          matchesSearch &&
+          matchesStatus
+        );
+      }
+    );
+  }, [
+    subscriptions,
+    search,
+    statusFilter,
+  ]);
+
+  // PAGINATION
+
+  const totalPages = Math.max(
+    1,
+    Math.ceil(
+      filtered.length / PAGE_SIZE
+    )
+  );
+
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter]);
+  }, [
+    search,
+    statusFilter,
+  ]);
 
-  // Keep page in range if the list shrinks (e.g. after deleting)
   useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [totalPages, page]);
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
-  const paginated = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return filtered.slice(start, start + PAGE_SIZE);
-  }, [filtered, page]);
+  const paginated =
+    useMemo(() => {
+      const start =
+        (page - 1) * PAGE_SIZE;
+
+      return filtered.slice(
+        start,
+        start + PAGE_SIZE
+      );
+    }, [filtered, page]);
+
+  // MODAL
 
   const openAddModal = () => {
     setEditingSub(null);
     setModalOpen(true);
   };
 
-  const openEditModal = (sub: Subscription) => {
-    setEditingSub(sub);
+  const openEditModal = (
+    subscription: Subscription
+  ) => {
+    setEditingSub(subscription);
     setModalOpen(true);
   };
 
@@ -139,39 +193,77 @@ export default function SubscriptionsPage() {
     setEditingSub(null);
   };
 
-  const handleSubmit = (data: Omit<Subscription, "id">) => {
-    if (editingSub) {
-      setSubscriptions((prev) =>
-        prev.map((s) =>
-          s.id === editingSub.id ? { ...data, id: editingSub.id } : s,
-        ),
-      );
-    } else {
-      setSubscriptions((prev) => [
-        { ...data, id: crypto.randomUUID() },
-        ...prev,
-      ]);
-    }
-    closeModal();
-  };
+// SUBMIT
 
-  const handleDelete = (id: string) => {
-    setSubscriptions((prev) => prev.filter((s) => s.id !== id));
-  };
+const handleSubmit = async (
+  data: SubscriptionFormData
+): Promise<{
+  success: boolean;
+  error?: string;
+}> => {
+  if (editingSub) {
+    return await updateSubscription(
+      editingSub.id,
+      data
+    );
+  }
+
+  return await createSubscription(data);
+};
+
+// DELETE
+
+const handleDelete = async (
+  id: string
+) => {
+  try {
+    const result = await deleteSubscription(id);
+
+    if (!result?.success) {
+      toast.error(
+        result?.error ?? "Failed to delete subscription."
+      );
+
+      return;
+    }
+
+    toast.success(
+      "Subscription deleted successfully."
+    );
+  } catch (error) {
+    console.error(
+      "Subscription deletion error:",
+      error
+    );
+
+    toast.error(
+      "Failed to delete subscription."
+    );
+  }
+};
+
+  // UI
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-800">
-            Subscription Plans
-          </h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Manage plans, billing status, and revenue for your company
-            subscriptions
-          </p>
-        </div>
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-xl font-semibold text-slate-900">
+          Subscription Plans
+        </h1>
+
+        <p className="mt-1 text-sm text-slate-500">
+          Manage plans, billing status,
+          and revenue for your company
+        </p>
       </div>
+
+      {/* Error */}
+      {error && (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {error}
+        </div>
+      )}
 
       {/* Summary cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -181,18 +273,21 @@ export default function SubscriptionsPage() {
           icon={Layers}
           accent="indigo"
         />
+
         <StatCard
           label="Active Subscriptions"
           value={String(stats.active)}
           icon={CheckCircle2}
           accent="emerald"
         />
+
         <StatCard
           label="Monthly Revenue"
           value={`TZS ${stats.monthlyRevenue.toLocaleString()}`}
           icon={DollarSign}
           accent="amber"
         />
+
         <StatCard
           label="Expired Plans"
           value={String(stats.expired)}
@@ -200,7 +295,8 @@ export default function SubscriptionsPage() {
           accent="rose"
         />
       </div>
-      {/* Add Subscription button */}
+
+      {/* Add button */}
       <div className="flex justify-end">
         <button
           type="button"
@@ -217,39 +313,66 @@ export default function SubscriptionsPage() {
         search={search}
         onSearchChange={setSearch}
         statusFilter={statusFilter}
-        onStatusFilterChange={setStatusFilter}
+        onStatusFilterChange={
+          setStatusFilter
+        }
       />
 
-      {/* Table */}
-      <SubscriptionTable
-        subscriptions={paginated}
-        onEdit={openEditModal}
-        onDelete={handleDelete}
-      />
+      {/* Loading */}
+      {loading ? (
+        <div className="rounded-xl border border-slate-200 bg-white px-6 py-12 text-center">
+          <p className="text-sm text-slate-500">
+            Loading subscription plans...
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* Table */}
+          <SubscriptionTable
+            subscriptions={paginated}
+            onEdit={openEditModal}
+            onDelete={handleDelete}
+          />
 
-      {/* Pagination */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-        <p className="text-xs text-slate-500">
-          Showing {filtered.length === 0 ? 0 : (page - 1) * PAGE_SIZE + 1}
-          &ndash;{Math.min(page * PAGE_SIZE, filtered.length)} of{" "}
-          {filtered.length}
-        </p>
-        <Pagination
-          page={page}
-          totalPages={totalPages}
-          pageSize={PAGE_SIZE}
-          totalCount={filtered.length}
-          itemLabel="products"
-          onPageChange={setPage}
-          onPageSizeChange={() => {}}
-        />
-      </div>
+          {/* Pagination */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+            <p className="text-xs text-slate-500">
+              Showing{" "}
+              {filtered.length === 0
+                ? 0
+                : (page - 1) *
+                    PAGE_SIZE +
+                  1}
+              &ndash;
+              {Math.min(
+                page * PAGE_SIZE,
+                filtered.length
+              )}{" "}
+              of {filtered.length}
+            </p>
 
-      {/* Add / Edit modal */}
+            <Pagination
+              page={page}
+              totalPages={totalPages}
+              pageSize={PAGE_SIZE}
+              totalCount={filtered.length}
+              itemLabel="subscriptions"
+              onPageChange={setPage}
+              onPageSizeChange={() => {}}
+            />
+          </div>
+        </>
+      )}
+
+      {/* Add / Edit Modal */}
       <Modal
         open={modalOpen}
         onClose={closeModal}
-        title={editingSub ? "Edit Subscription" : "Add Subscription"}
+        title={
+          editingSub
+            ? "Edit Subscription"
+            : "Add Subscription"
+        }
       >
         <SubscriptionForm
           initialValue={editingSub}

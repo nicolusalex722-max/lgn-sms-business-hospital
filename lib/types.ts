@@ -25,6 +25,41 @@ export const PRODUCT_STATUSES: ProductStatus[] = [
   "Inactive",
 ];
 
+// Subscription Plans
+
+export type SubscriptionStatus =
+  | "Active"
+  | "Trial"
+  | "Expired"
+  | "Cancelled";
+
+export type BillingCycle =
+  | "Monthly"
+  | "Quarterly"
+  | "Yearly";
+
+export type Subscription = {
+  id: string;
+  plan: string;
+  status: SubscriptionStatus;
+  amount: number;
+  billingCycle: BillingCycle;
+  startDate: string; // ISO date
+};
+
+export const SUBSCRIPTION_STATUSES: SubscriptionStatus[] = [
+  "Active",
+  "Trial",
+  "Expired",
+  "Cancelled",
+];
+
+export const BILLING_CYCLES: BillingCycle[] = [
+  "Monthly",
+  "Quarterly",
+  "Yearly",
+];
+
 export type Transaction = {
   id: string;
   date: string;
