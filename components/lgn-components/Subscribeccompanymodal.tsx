@@ -1,173 +1,485 @@
 "use client";
 
-import { useState } from "react";
-import { Receipt, FileCheck2 } from "lucide-react";
-import type { Company } from "./Companytable";
+import { useEffect, useMemo, useState } from "react";
+import {
+  CalendarDays,
+  FileCheck2,
+  Package,
+} from "lucide-react";
+
+import type {
+  Company,
+  Product,
+  Subscription,
+  CompanySubscriptionStatus,
+} from "@/lib/types";
+
+import {
+  COMPANY_SUBSCRIPTION_STATUSES,
+} from "@/lib/types";
+
+import { useProducts } from "@/hooks/use-products";
+import { useSubscriptions } from "@/hooks/use-subscriptions";
+
+import type { CompanySubscriptionCreateInput } from "@/lib/validations/company-subscription-schema";
 
 interface SubscribeCompanyModalProps {
   company: Company;
   onClose: () => void;
-  onSave: (subscription: {
-    companyId: string;
-    plan: string;
-    billingCycle: string;
-    amount: number;
-    startDate: string;
-  }) => void;
+  onSave: (
+    data: CompanySubscriptionCreateInput
+  ) => Promise<void> | void;
+  loading?: boolean;
 }
 
-const PLANS = ["Basic", "Standard", "Premium", "Enterprise"];
-const VAT_RATE = 0.18;
+const DEFAULT_STATUS: CompanySubscriptionStatus = "Active";
 
 function formatCurrency(value: number) {
-  return `TZS ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  return `TZS ${value.toLocaleString("en-TZ", {
+    maximumFractionDigits: 0,
+  })}`;
 }
 
-export default function SubscribeCompanyModal({ company, onClose, onSave }: SubscribeCompanyModalProps) {
-  const [plan, setPlan] = useState("Standard");
-  const [billingCycle, setBillingCycle] = useState("Monthly");
-  const [amount, setAmount] = useState("");
-  const [startDate, setStartDate] = useState(new Date().toISOString().split("T")[0]);
-  const [billGenerated, setBillGenerated] = useState(false);
+export default function SubscribeCompanyModal({
+  company,
+  onClose,
+  onSave,
+  loading = false,
+}: SubscribeCompanyModalProps) {
+  const {
+    products,
+    loading: productsLoading,
+    error: productsError,
+  } = useProducts();
 
-  const numericAmount = Number(amount) || 0;
-  const vat = numericAmount * VAT_RATE;
-  const total = numericAmount + vat;
+  const {
+    subscriptions,
+    loading: subscriptionsLoading,
+    error: subscriptionsError,
+  } = useSubscriptions();
 
-  const handleGenerateBill = () => {
-    if (numericAmount <= 0) return;
-    setBillGenerated(true);
+  const [productId, setProductId] = useState("");
+  const [subscriptionPlanId, setSubscriptionPlanId] =
+    useState("");
+
+  const [status, setStatus] =
+    useState<CompanySubscriptionStatus>(
+      DEFAULT_STATUS
+    );
+
+  const [startDate, setStartDate] = useState(
+    new Date().toISOString().split("T")[0]
+  );
+
+  const [endDate, setEndDate] = useState("");
+
+  const [validationError, setValidationError] =
+    useState<string | null>(null);
+
+  /* -------------------------------------------------------------------------- */
+  /* PRODUCTS                                                                   */
+  /* -------------------------------------------------------------------------- */
+
+  const activeProducts = useMemo(() => {
+    return products.filter(
+      (product: Product) =>
+        product.status === "Active"
+    );
+  }, [products]);
+
+  /* -------------------------------------------------------------------------- */
+  /* SELECTED PRODUCT                                                           */
+  /* -------------------------------------------------------------------------- */
+
+  const selectedProduct = useMemo(() => {
+    return products.find(
+      (product) => product.id === productId
+    );
+  }, [products, productId]);
+
+  /* -------------------------------------------------------------------------- */
+  /* PLANS                                                                      */
+  /* -------------------------------------------------------------------------- */
+
+  const activePlans = useMemo(() => {
+    return subscriptions.filter(
+      (subscription: Subscription) =>
+        subscription.status === "Active" ||
+        subscription.status === "Trial"
+    );
+  }, [subscriptions]);
+
+  /* -------------------------------------------------------------------------- */
+  /* SELECTED PLAN                                                              */
+  /* -------------------------------------------------------------------------- */
+
+  const selectedPlan = useMemo(() => {
+    return subscriptions.find(
+      (subscription) =>
+        subscription.id === subscriptionPlanId
+    );
+  }, [subscriptions, subscriptionPlanId]);
+
+  /* -------------------------------------------------------------------------- */
+  /* PRODUCT CHANGE                                                             */
+  /* -------------------------------------------------------------------------- */
+
+  useEffect(() => {
+    setSubscriptionPlanId("");
+  }, [productId]);
+
+  /* -------------------------------------------------------------------------- */
+  /* VALIDATION                                                                 */
+  /* -------------------------------------------------------------------------- */
+
+  const validate = () => {
+    setValidationError(null);
+
+    if (!productId) {
+      setValidationError(
+        "Please select a product."
+      );
+
+      return false;
+    }
+
+    if (!subscriptionPlanId) {
+      setValidationError(
+        "Please select a subscription plan."
+      );
+
+      return false;
+    }
+
+    if (!startDate) {
+      setValidationError(
+        "Start date is required."
+      );
+
+      return false;
+    }
+
+    if (
+      endDate &&
+      new Date(endDate) < new Date(startDate)
+    ) {
+      setValidationError(
+        "End date cannot be earlier than start date."
+      );
+
+      return false;
+    }
+
+    return true;
   };
 
-  const handleSave = () => {
-    onSave({
+  /* -------------------------------------------------------------------------- */
+  /* SAVE                                                                       */
+  /* -------------------------------------------------------------------------- */
+
+  const handleSave = async () => {
+    if (!validate()) {
+      return;
+    }
+
+    await onSave({
       companyId: company.id,
-      plan,
-      billingCycle,
-      amount: numericAmount,
+      productId,
+      subscriptionPlanId,
+      status,
       startDate,
+      endDate: endDate || null,
     });
   };
 
+  const loadingData =
+    productsLoading || subscriptionsLoading;
+
+  const dataError =
+    productsError || subscriptionsError;
+
+  /* -------------------------------------------------------------------------- */
+  /* RENDER                                                                     */
+  /* -------------------------------------------------------------------------- */
+
   return (
     <div className="flex flex-col gap-5">
-      <p className="text-sm text-slate-500">
-        Subscribing <span className="font-semibold text-slate-700">{company.name}</span> to a plan
-      </p>
+      {/* Company */}
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <p className="text-xs font-medium text-slate-400">
+          Company
+        </p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <p className="mt-1 text-sm font-semibold text-slate-800">
+          {company.displayName}
+        </p>
+
+        <p className="text-xs text-slate-500">
+          {company.companyName}
+        </p>
+      </div>
+
+      {/* Loading */}
+      {loadingData && (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="text-sm text-slate-500">
+            Loading products and subscription plans...
+          </p>
+        </div>
+      )}
+
+      {/* Data Error */}
+      {dataError && (
+        <div
+          role="alert"
+          className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3"
+        >
+          <p className="text-sm text-rose-700">
+            {dataError}
+          </p>
+        </div>
+      )}
+
+      {/* Validation Error */}
+      {validationError && (
+        <div
+          role="alert"
+          className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3"
+        >
+          <p className="text-sm text-rose-700">
+            {validationError}
+          </p>
+        </div>
+      )}
+
+      {/* Fields */}
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        {/* Product */}
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-slate-500">Plan</label>
+          <label className="text-xs font-medium text-slate-500">
+            Product
+          </label>
+
           <select
-            value={plan}
-            onChange={(e) => setPlan(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            value={productId}
+            onChange={(event) =>
+              setProductId(event.target.value)
+            }
+            disabled={loadingData || loading}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-50"
           >
-            {PLANS.map((p) => (
-              <option key={p} value={p}>
-                {p}
+            <option value="">
+              Select product
+            </option>
+
+            {activeProducts.map((product) => (
+              <option
+                key={product.id}
+                value={product.id}
+              >
+                {product.name}
               </option>
             ))}
           </select>
         </div>
 
+        {/* Subscription Plan */}
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-slate-500">Billing Cycle</label>
+          <label className="text-xs font-medium text-slate-500">
+            Subscription Plan
+          </label>
+
           <select
-            value={billingCycle}
-            onChange={(e) => setBillingCycle(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-slate-300 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            value={subscriptionPlanId}
+            onChange={(event) =>
+              setSubscriptionPlanId(
+                event.target.value
+              )
+            }
+            disabled={
+              !productId ||
+              loadingData ||
+              loading
+            }
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-50"
           >
-            <option>Monthly</option>
-            <option>Quarterly</option>
-            <option>Yearly</option>
+            <option value="">
+              Select subscription plan
+            </option>
+
+            {activePlans.map((plan) => (
+              <option
+                key={plan.id}
+                value={plan.id}
+              >
+                {plan.plan}
+              </option>
+            ))}
           </select>
         </div>
 
+        {/* Status */}
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-slate-500">Amount (TZS)</label>
-          <input
-            type="number"
-            min="0"
-            value={amount}
-            onChange={(e) => {
-              setAmount(e.target.value);
-              setBillGenerated(false);
-            }}
-            placeholder="e.g. 150000"
-            className="px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-          />
+          <label className="text-xs font-medium text-slate-500">
+            Status
+          </label>
+
+          <select
+            value={status}
+            onChange={(event) =>
+              setStatus(
+                event.target
+                  .value as CompanySubscriptionStatus
+              )
+            }
+            disabled={loading}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          >
+            {COMPANY_SUBSCRIPTION_STATUSES.map(
+              (currentStatus) => (
+                <option
+                  key={currentStatus}
+                  value={currentStatus}
+                >
+                  {currentStatus}
+                </option>
+              )
+            )}
+          </select>
         </div>
 
+        {/* Start Date */}
         <div className="flex flex-col gap-1">
-          <label className="text-xs font-medium text-slate-500">Start Date</label>
+          <label className="text-xs font-medium text-slate-500">
+            Start Date
+          </label>
+
           <input
             type="date"
             value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+            onChange={(event) =>
+              setStartDate(event.target.value)
+            }
+            disabled={loading}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+
+        {/* End Date */}
+        <div className="flex flex-col gap-1 sm:col-span-2">
+          <label className="text-xs font-medium text-slate-500">
+            End Date
+          </label>
+
+          <input
+            type="date"
+            value={endDate}
+            min={startDate}
+            onChange={(event) =>
+              setEndDate(event.target.value)
+            }
+            disabled={loading}
+            className="rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
         </div>
       </div>
 
-      {/* Generate Bill section */}
-      <div className="rounded-lg border border-dashed border-slate-300 p-4">
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Receipt className="w-4 h-4 text-indigo-600" />
-            <h4 className="text-sm font-semibold text-slate-800">Generate Bill</h4>
-          </div>
-          <button
-            type="button"
-            onClick={handleGenerateBill}
-            disabled={numericAmount <= 0}
-            className="px-3 py-1.5 rounded-lg bg-slate-800 text-white text-xs font-medium hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-          >
-            Generate Bill
-          </button>
-        </div>
+      {/* Selected Plan Summary */}
+      {selectedPlan && (
+        <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-4">
+          <div className="mb-3 flex items-center gap-2">
+            <Package className="h-4 w-4 text-indigo-600" />
 
-        {billGenerated ? (
-          <div className="text-sm text-slate-600 flex flex-col gap-1.5">
-            <div className="flex justify-between">
-              <span>Subtotal ({plan}, {billingCycle})</span>
-              <span>{formatCurrency(numericAmount)}</span>
+            <h4 className="text-sm font-semibold text-slate-800">
+              Subscription Summary
+            </h4>
+          </div>
+
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between gap-4">
+              <span className="text-slate-500">
+                Product
+              </span>
+
+              <span className="font-medium text-slate-800">
+                {selectedProduct?.type ?? "-"}
+              </span>
             </div>
-            <div className="flex justify-between">
-              <span>VAT (18%)</span>
-              <span>{formatCurrency(vat)}</span>
+
+            <div className="flex justify-between gap-4">
+              <span className="text-slate-500">
+                Plan
+              </span>
+
+              <span className="font-medium text-slate-800">
+                {selectedPlan.plan}
+              </span>
             </div>
-            <div className="flex justify-between font-semibold text-slate-800 pt-1.5 border-t border-slate-200">
-              <span>Total Due</span>
-              <span>{formatCurrency(total)}</span>
+
+            <div className="flex justify-between gap-4">
+              <span className="text-slate-500">
+                Billing Cycle
+              </span>
+
+              <span className="font-medium text-slate-800">
+                {selectedPlan.billingCycle}
+              </span>
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-emerald-600 mt-1">
-              <FileCheck2 className="w-3.5 h-3.5" />
-              Bill ready to send to {company.name}
+
+            <div className="flex justify-between gap-4 border-t border-indigo-100 pt-2">
+              <span className="font-medium text-slate-600">
+                Amount
+              </span>
+
+              <span className="font-semibold text-slate-900">
+                {formatCurrency(
+                  selectedPlan.amount
+                )}
+              </span>
             </div>
           </div>
-        ) : (
-          <p className="text-xs text-slate-400">
-            Enter an amount and click &ldquo;Generate Bill&rdquo; to preview VAT and total due.
-          </p>
-        )}
+        </div>
+      )}
+
+      {/* Info */}
+      <div className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <CalendarDays className="mt-0.5 h-4 w-4 shrink-0 text-slate-500" />
+
+        <p className="text-xs leading-5 text-slate-500">
+          Product, plan, billing cycle and amount are
+          managed from their respective master records.
+          This subscription only stores the relationship
+          between the company, product and plan.
+        </p>
       </div>
 
+      {/* Actions */}
       <div className="flex justify-end gap-2 pt-2">
         <button
           type="button"
           onClick={onClose}
-          className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+          disabled={loading}
+          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-50 disabled:opacity-50"
         >
           Cancel
         </button>
+
         <button
           type="button"
           onClick={handleSave}
-          disabled={numericAmount <= 0}
-          className="px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          disabled={
+            loading ||
+            loadingData ||
+            !productId ||
+            !subscriptionPlanId
+          }
+          className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Save Subscription
+          <FileCheck2 className="h-4 w-4" />
+
+          {loading
+            ? "Saving..."
+            : "Save Subscription"}
         </button>
       </div>
     </div>

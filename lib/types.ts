@@ -60,6 +60,113 @@ export const BILLING_CYCLES: BillingCycle[] = [
   "Yearly",
 ];
 
+// Companies
+
+export type CompanyStatus = "Active" | "Inactive" | "Suspended";
+
+export type Company = {
+  id: string;
+  companyName: string;
+  displayName: string;
+  email: string;
+  phone: string | null;
+  address: string | null;
+  tin: string | null;
+  registrationNumber: string | null;
+
+  status: CompanyStatus;
+
+  businessType: ProductType | null;
+  subscriptionStatus: CompanySubscriptionStatus | null;
+
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const COMPANY_STATUSES: CompanyStatus[] = [
+  "Active",
+  "Inactive",
+  "Suspended",
+];
+
+// Company Subscriptions
+
+export type CompanySubscriptionStatus =
+  | "Trial"
+  | "Active"
+  | "Suspended"
+  | "Expired"
+  | "Cancelled";
+
+export type CompanySubscription = {
+  id: string;
+  companyId: string;
+  productId: string;
+  subscriptionPlanId: string;
+  status: CompanySubscriptionStatus;
+  startDate: string; // ISO date
+  endDate: string | null; // ISO date
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const COMPANY_SUBSCRIPTION_STATUSES: CompanySubscriptionStatus[] = [
+  "Trial",
+  "Active",
+  "Suspended",
+  "Expired",
+  "Cancelled",
+];
+
+// Company Admins
+
+export type CompanyAdminStatus = "Active" | "Inactive" | "Suspended";
+
+export type CompanyAdmin = {
+  id: string;
+  authUserId: string;
+  companyId: string;
+  status: CompanyAdminStatus;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const COMPANY_ADMIN_STATUSES: CompanyAdminStatus[] = [
+  "Active",
+  "Inactive",
+  "Suspended",
+];
+
+// Company Users
+
+export type CompanyUserRole = "User";
+
+export type CompanyUserStatus = "Active" | "Inactive" | "Suspended";
+
+export type CompanyUser = {
+  id: string;
+  authUserId: string;
+  companyId: string;
+  username: string;
+  email: string;
+  role: CompanyUserRole;
+  status: CompanyUserStatus;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const COMPANY_USER_ROLES: CompanyUserRole[] = [
+  "User",
+];
+
+export const COMPANY_USER_STATUSES: CompanyUserStatus[] = [
+  "Active",
+  "Inactive",
+  "Suspended",
+];
+
+
 export type Transaction = {
   id: string;
   date: string;

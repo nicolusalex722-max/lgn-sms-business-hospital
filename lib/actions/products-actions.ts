@@ -108,9 +108,7 @@ export async function getProducts(): Promise<
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* GET PRODUCT BY ID                                                          */
-/* -------------------------------------------------------------------------- */
+// GET PRODUCT BY ID                                                          
 
 export async function getProductById(
   id: string
@@ -167,9 +165,7 @@ export async function getProductById(
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* CREATE PRODUCT                                                             */
-/* -------------------------------------------------------------------------- */
+// CREATE PRODUCT                                                             
 
 export async function createProduct(
   input: ProductFormData
@@ -233,9 +229,7 @@ export async function createProduct(
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* UPDATE PRODUCT                                                             */
-/* -------------------------------------------------------------------------- */
+// UPDATE PRODUCT                                                             
 
 export async function updateProduct(
   id: string,
