@@ -1,5 +1,5 @@
 "use client";
-
+import type { AuthenticatedUser } from "@/lib/types";
 import { useState } from "react";
 import { usePathname } from "next/navigation";
 import {
@@ -29,75 +29,37 @@ type NavItem = {
   href?: string;
 };
 
-// const NAV_ITEMS: NavItem[] = [
-//   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-//   {
-//     label: "Finance",
-//     icon: Landmark,
-//     children: [
-//       { label: "Transactions", href: "/dashboard/finance/transactions" },
-//       { label: "Invoices", href: "/dashboard/finance/invoices" },
-//       { label: "Payroll", href: "/dashboard/finance/payroll" },
-//     ],
-//   },
-//   {
-//     label: "Customers",
-//     icon: Users,
-//     children: [
-//       { label: "All Customers", href: "/dashboard/customers" },
-//       { label: "Leads", href: "/dashboard/customers/leads" },
-//     ],
-//   },
-//   {
-//     label: "Inventory",
-//     icon: Package,
-//     children: [
-//       { label: "Stock Levels", href: "/dashboard/inventory/stock" },
-//       { label: "Purchase Orders", href: "/dashboard/inventory/orders" },
-//     ],
-//   },
-//   {
-//     label: "Reports",
-//     icon: BarChart3,
-//     children: [
-//       { label: "Sales Reports", href: "/dashboard/reports/sales" },
-//       { label: "Tax Reports", href: "/dashboard/reports/tax" },
-//     ],
-//   },
-//   {
-//     label: "Settings",
-//     icon: Settings,
-//     children: [
-//       { label: "Company Profile", href: "/dashboard/settings/company" },
-//       { label: "Users & Roles", href: "/dashboard/settings/roles" },
-//     ],
-//   },
-// ];
-
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
   {
     label: "Accounting",
     icon: BookOpen,
     children: [
-       { label: "Account Group", href: "/dashboard/accounting/account-group" },
-       { label: "Entries", href: "/dashboard/accounting/entries" },
-       { label: "Chart of Accounting", href: "/dashboard/accounting/chart-accounts" },
-       { label: "Bank reconcialition", href: "/dashboard/accounting/bank-reconcialition" },
-      
+      { label: "Account Group", href: "/dashboard/accounting/account-group" },
+      { label: "Entries", href: "/dashboard/accounting/entries" },
+      {
+        label: "Chart of Accounting",
+        href: "/dashboard/accounting/chart-accounts",
+      },
+      {
+        label: "Bank reconcialition",
+        href: "/dashboard/accounting/bank-reconcialition",
+      },
     ],
   },
-   {
+  {
     label: "Payments & Financials",
     icon: Landmark,
-    children: [  
-      { label: "Fees Receive & Pay Payments", href: "/dashboard/payments/receive-pay-payments" },
-    //   { label: "Transfer Funds", href: "/dashboard/payments/transfer-funds" },
+    children: [
+      {
+        label: "Fees Receive & Pay Payments",
+        href: "/dashboard/payments/receive-pay-payments",
+      },
+      //   { label: "Transfer Funds", href: "/dashboard/payments/transfer-funds" },
       { label: "Expenses", href: "/dashboard/payments/expenses" },
       { label: "Bills & Invoice", href: "/dashboard/payments/bills-invoice" },
-      { label: "Budget", href: "/dashboard/payments/budget"},
-    //   { label: "Invoices", href: "/dashboard/payments/invoices" },
-      
+      { label: "Budget", href: "/dashboard/payments/budget" },
+      //   { label: "Invoices", href: "/dashboard/payments/invoices" },
     ],
   },
 
@@ -116,8 +78,8 @@ const NAV_ITEMS: NavItem[] = [
     icon: Users,
     children: [
       { label: "Registration", href: "/dashboard/students/registrations" },
-    //   { label: "Students Managements", href: "/dashboard/students/student-management" },
-    //   { label: "Parents Management", href: "/dashboard/students/parents-management" },
+      //   { label: "Students Managements", href: "/dashboard/students/student-management" },
+      //   { label: "Parents Management", href: "/dashboard/students/parents-management" },
     ],
   },
 
@@ -134,58 +96,88 @@ const NAV_ITEMS: NavItem[] = [
       { label: "Accommodations", href: "/dashboard/academics/accommodations" },
     ],
   },
-    {
+  {
     label: "Library",
     icon: BookSearch,
     children: [
-      { label: "Library-management", href: "/dashboard/library/library-management" },
+      {
+        label: "Library-management",
+        href: "/dashboard/library/library-management",
+      },
       { label: "Catalog", href: "/dashboard/library/catalog" },
       { label: "Operations", href: "/dashboard/library/operations" },
     ],
   },
-   {
+  {
     label: "Sales",
     icon: ShoppingCart,
     children: [
       { label: "Order Management", href: "/dashboard/sales/order-management" },
       { label: "Customers", href: "/dashboard/sales/customers" },
-      
     ],
   },
   {
     label: "Inventory & Procurement",
     icon: Package,
     children: [
-      { label: "Inventory", href: "/dashboard/inventory-procurement/inventory" },
-      { label: "Purchase Orders", href: "/dashboard/inventory-procurement/purchase-orders" },
-      { label: "Suppliers", href: "/dashboard/inventory-procurement/suppliers" },
-      { label: "Stock Take", href: "/dashboard/inventory-procurement/stock-take" },
-      { label: "Stock Adjustments", href: "/dashboard/inventory-procurement/stock-adjustments" },
+      {
+        label: "Inventory",
+        href: "/dashboard/inventory-procurement/inventory",
+      },
+      {
+        label: "Purchase Orders",
+        href: "/dashboard/inventory-procurement/purchase-orders",
+      },
+      {
+        label: "Suppliers",
+        href: "/dashboard/inventory-procurement/suppliers",
+      },
+      {
+        label: "Stock Take",
+        href: "/dashboard/inventory-procurement/stock-take",
+      },
+      {
+        label: "Stock Adjustments",
+        href: "/dashboard/inventory-procurement/stock-adjustments",
+      },
     ],
   },
   {
     label: "Reports",
     icon: BarChart3,
     children: [
-      { label: "Academic Reports", href: "/dashboard/reports/academic-reports" },
-      {label:"Sales Reports",href:"/dashboard/reports/sales-reports"},
-      { label: "Financial Reports", href: "/dashboard/reports/financial-reports" },
-      { label: "Supplier&Payable Reports", href: "/dashboard/reports/supplier-reports" },
-      { label: "Inventory Reports", href: "/dashboard/reports/inventory-reports" },
-      
+      {
+        label: "Academic Reports",
+        href: "/dashboard/reports/academic-reports",
+      },
+      { label: "Sales Reports", href: "/dashboard/reports/sales-reports" },
+      {
+        label: "Financial Reports",
+        href: "/dashboard/reports/financial-reports",
+      },
+      {
+        label: "Supplier&Payable Reports",
+        href: "/dashboard/reports/supplier-reports",
+      },
+      {
+        label: "Inventory Reports",
+        href: "/dashboard/reports/inventory-reports",
+      },
     ],
   },
-   {
+  {
     label: "Company",
     icon: FileText,
     children: [
       { label: "Profile", href: "/dashboard/company/profile" },
       { label: "Departments", href: "/dashboard/company/departments" },
       { label: "Branches", href: "/dashboard/company/branches" },
-      { label: "Message Broadcast", href: "/dashboard/company/message-broadcast" },
-      { label: "User Management", href: "/dashboard/company/user-management"},
-      { label: "Access & Roles", href: "/dashboard/company/access-roles"},
-
+      {
+        label: "Message Broadcast",
+        href: "/dashboard/company/message-broadcast",
+      },
+      { label: "User Management", href: "/dashboard/company/user-management" },
+      { label: "Access & Roles", href: "/dashboard/company/access-roles" },
     ],
   },
   {
@@ -193,7 +185,10 @@ const NAV_ITEMS: NavItem[] = [
     icon: Settings,
     children: [
       { label: "Accounting Settings", href: "/dashboard/settings/gl-settings" },
-      { label: "Academic Settings", href: "/dashboard/settings/academic-settings" },
+      {
+        label: "Academic Settings",
+        href: "/dashboard/settings/academic-settings",
+      },
       { label: "System Settings", href: "/dashboard/settings/system-settings" },
     ],
   },
@@ -201,15 +196,18 @@ const NAV_ITEMS: NavItem[] = [
     label: "Lgn Company",
     icon: Laptop,
     children: [
-      { label: "Company Management", href: "/dashboard/lgn/company-management" },
+      {
+        label: "Company Management",
+        href: "/dashboard/lgn/company-management",
+      },
       { label: "Subscriptions Plan", href: "/dashboard/lgn/sub-plan" },
       { label: "Software Products", href: "/dashboard/lgn/software-products" },
     ],
   },
-
 ];
 function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
-  const isChildActive = item.children?.some((c) => pathname === c.href) ?? false;
+  const isChildActive =
+    item.children?.some((c) => pathname === c.href) ?? false;
   const [open, setOpen] = useState(isChildActive);
   const Icon = item.icon;
 
@@ -242,7 +240,9 @@ function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
         }`}
       >
         <Icon className="w-5 h-5 shrink-0" />
-        <span className="text-sm font-medium flex-1 text-left">{item.label}</span>
+        <span className="text-sm font-medium flex-1 text-left">
+          {item.label}
+        </span>
         <ChevronDown
           className={`w-4 h-4 transition-transform ${open ? "rotate-180" : ""}`}
         />
@@ -271,7 +271,11 @@ function NavLink({ item, pathname }: { item: NavItem; pathname: string }) {
   );
 }
 
-export default function Sidebar() {
+type SidebarProps = {
+  user: AuthenticatedUser;
+};
+
+export default function Sidebar({ user }: SidebarProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const pathname = usePathname();
 
@@ -292,16 +296,30 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      <div className="border-t border-slate-800 p-2 shrink-0">
+      <div className="border-t border-slate-800 p-3 shrink-0">
+        <div className="flex items-center gap-3 px-2 py-3">
+          <div className="w-9 h-9 rounded-full bg-indigo-500 flex items-center justify-center text-white font-semibold text-sm shrink-0">
+            {user.email.charAt(0).toUpperCase()}
+          </div>
+
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-white truncate">
+              {user.email}
+            </p>
+
+            <p className="text-xs text-slate-400">{user.role}</p>
+          </div>
+        </div>
+
         <button
           type="button"
           onClick={() => {
-            // Wire this up to your sign-out logic, e.g. NextAuth's signOut()
             console.log("logout clicked");
           }}
           className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-slate-300 hover:bg-indigo-500 hover:text-white transition-colors"
         >
           <LogOut className="w-5 h-5 shrink-0" />
+
           <span className="text-sm font-medium">Logout</span>
         </button>
       </div>
@@ -315,7 +333,9 @@ export default function Sidebar() {
           <div className="w-7 h-7 rounded-md bg-indigo-500 flex items-center justify-center font-bold text-white text-xs">
             B
           </div>
-          <span className="text-white font-semibold text-sm">Business Dashboard</span>
+          <span className="text-white font-semibold text-sm">
+            Business Dashboard
+          </span>
         </div>
         <button
           type="button"
@@ -343,7 +363,7 @@ export default function Sidebar() {
                 type="button"
                 onClick={() => setMobileOpen(false)}
                 aria-label="Close menu"
-                className="absolute top-4 right-[-40px] text-white p-1"
+                className="absolute top-4 -right-10 text-white p-1"
               >
                 <X className="w-6 h-6" />
               </button>

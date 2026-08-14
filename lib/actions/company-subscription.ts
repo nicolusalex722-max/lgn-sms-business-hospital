@@ -154,7 +154,7 @@ export async function getCompanySubscriptions(): Promise<
   CompanySubscriptionActionResult<CompanySubscription[]>
 > {
   try {
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("company_subscriptions")
@@ -213,7 +213,7 @@ export async function getCompanySubscriptionsByCompanyId(
       };
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("company_subscriptions")
@@ -274,7 +274,7 @@ export async function getCompanySubscriptionById(
       };
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("company_subscriptions")
@@ -347,7 +347,7 @@ export async function createCompanySubscription(
     const values = validation.data;
 
     const supabase =
-      createSupabaseServerClient();
+      await createSupabaseServerClient();
 
     /* ---------------------------------------------------------------------- */
     /* Insert                                                                 */
@@ -448,7 +448,7 @@ export async function updateCompanySubscription(
     const values = validation.data;
 
     const supabase =
-      createSupabaseServerClient();
+      await createSupabaseServerClient();
 
     /* ---------------------------------------------------------------------- */
     /* Update                                                                 */
@@ -528,7 +528,7 @@ export async function deleteCompanySubscription(
     }
 
     const supabase =
-      createSupabaseServerClient();
+      await createSupabaseServerClient();
 
     const { error } = await supabase
       .from("company_subscriptions")

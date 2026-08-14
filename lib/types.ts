@@ -1,3 +1,4 @@
+
 // Product
 
 export type ProductType = "Business" | "Education" | "Hospital";
@@ -118,9 +119,45 @@ export const COMPANY_SUBSCRIPTION_STATUSES: CompanySubscriptionStatus[] = [
   "Cancelled",
 ];
 
+// Authentication & Authorization
+
+export type SystemRole =
+  | "SuperAdmin"
+  | "CompanyAdmin"
+  | "User";
+
+export const SYSTEM_ROLES: SystemRole[] = [
+  "SuperAdmin",
+  "CompanyAdmin",
+  "User",
+];
+
+
+// Authenticated User
+
+export type AuthenticatedUser = {
+  id: string;
+  email: string;
+  role: SystemRole;
+  companyId: string | null;
+};
+
+
+// Tenant Context
+
+export type UserTenantContext = {
+  userId: string;
+  role: SystemRole;
+  companyId: string | null;
+};
+
+
 // Company Admins
 
-export type CompanyAdminStatus = "Active" | "Inactive" | "Suspended";
+export type CompanyAdminStatus =
+  | "Active"
+  | "Inactive"
+  | "Suspended";
 
 export type CompanyAdmin = {
   id: string;
@@ -137,11 +174,23 @@ export const COMPANY_ADMIN_STATUSES: CompanyAdminStatus[] = [
   "Suspended",
 ];
 
+
+// Company Admin Creation
+
+export type CompanyAdminCreateInput = {
+  email: string;
+  password: string;
+};
+
+
 // Company Users
 
 export type CompanyUserRole = "User";
 
-export type CompanyUserStatus = "Active" | "Inactive" | "Suspended";
+export type CompanyUserStatus =
+  | "Active"
+  | "Inactive"
+  | "Suspended";
 
 export type CompanyUser = {
   id: string;
@@ -167,6 +216,33 @@ export const COMPANY_USER_STATUSES: CompanyUserStatus[] = [
 ];
 
 
+// Company User Creation
+
+export type CompanyUserCreateInput = {
+  username: string;
+  email: string;
+  password: string;
+  role: CompanyUserRole;
+};
+
+
+// Company + Admin Onboarding
+
+export type CompanyWithAdminCreateInput = {
+  company: {
+    companyName: string;
+    displayName: string;
+    email: string;
+    phone: string | null;
+    address: string | null;
+    tin: string | null;
+    registrationNumber: string | null;
+  };
+
+  admin: CompanyAdminCreateInput;
+};
+
+//TRANSACTION
 export type Transaction = {
   id: string;
   date: string;

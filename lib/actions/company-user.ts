@@ -79,7 +79,7 @@ function mapCompanyUserStatus(
 /* -------------------------------------------------------------------------- */
 
 async function getCurrentCompanyAdmin() {
-  const supabase = createSupabaseServerClient();
+  const supabase = await createSupabaseServerClient();
 
   const {
     data: { user },
@@ -142,7 +142,7 @@ export async function getCompanyUsers(): Promise<
       };
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("company_users")
@@ -216,7 +216,7 @@ export async function getCompanyUserById(
       };
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("company_users")
@@ -301,7 +301,7 @@ export async function createCompanyUser(
       };
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     /*
      * IMPORTANT:
@@ -433,7 +433,7 @@ export async function updateCompanyUser(
       };
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("company_users")
@@ -518,7 +518,7 @@ export async function deleteCompanyUser(
       };
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { error } = await supabase
       .from("company_users")

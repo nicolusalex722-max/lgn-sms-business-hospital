@@ -83,7 +83,7 @@ export async function getSubscriptions(): Promise<
   SubscriptionActionResult<Subscription[]>
 > {
   try {
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("subscription_plans")
@@ -146,7 +146,7 @@ export async function getSubscriptionById(
       };
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("subscription_plans")
@@ -218,7 +218,7 @@ export async function createSubscription(
 
     const values = validation.data;
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("subscription_plans")
@@ -303,7 +303,7 @@ export async function updateSubscription(
 
     const values = validation.data;
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("subscription_plans")
@@ -377,7 +377,7 @@ export async function deleteSubscription(
       };
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { error } = await supabase
       .from("subscription_plans")

@@ -66,7 +66,7 @@ export async function getProducts(): Promise<
   ProductActionResult<Product[]>
 > {
   try {
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("products")
@@ -121,7 +121,7 @@ export async function getProductById(
       };
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("products")
@@ -183,7 +183,7 @@ export async function createProduct(
 
     const values = validation.data;
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("products")
@@ -255,7 +255,7 @@ export async function updateProduct(
 
     const values = validation.data;
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { data, error } = await supabase
       .from("products")
@@ -320,7 +320,7 @@ export async function deleteProduct(
       };
     }
 
-    const supabase = createSupabaseServerClient();
+    const supabase = await createSupabaseServerClient();
 
     const { error } = await supabase
       .from("products")
