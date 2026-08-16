@@ -1,105 +1,30 @@
 "use client";
 
-import { Layers, Eye, Pencil, Trash2 } from "lucide-react";
-
-export interface Department {
-  id: string;
-  name: string;
-  code: string;
-  description: string;
-  status: string;
-}
+import { Eye, Layers, Pencil, Trash2 } from "lucide-react";
+import type { Department } from "@/lib/types";
 
 interface DepartmentTableProps {
   departments: Department[];
   onView: (department: Department) => void;
   onEdit: (department: Department) => void;
-  onDelete: (id: string) => void;
+  onDelete: (department: Department) => void;
 }
 
-function StatusPill({ status }: { status: string }) {
-  const style =
-    status === "Active" ? "bg-sky-600 text-white" : "bg-slate-200 text-slate-600";
-  return (
-    <span className={`inline-flex items-center px-3 py-1 rounded-full text-xs font-medium ${style}`}>
-      {status}
-    </span>
-  );
+function StatusPill({ status }: { status: Department["status"] }) {
+  const style = status === "Active" ? "bg-sky-600 text-white" : "bg-slate-200 text-slate-600";
+  return <span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${style}`}>{status}</span>;
 }
 
 export default function DepartmentTable({ departments, onView, onEdit, onDelete }: DepartmentTableProps) {
-  if (departments.length === 0) {
-    return (
-      <div className="bg-white rounded-xl border border-slate-200 p-10 text-center">
-        <p className="text-sm text-slate-500">No departments match your search.</p>
-      </div>
-    );
-  }
+  if (!departments.length) return <div className="rounded-xl border border-slate-200 bg-white p-10 text-center"><p className="text-sm text-slate-500">No departments match your search.</p></div>;
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-200">
-              <th className="text-left font-medium text-slate-500 px-5 py-4">Department</th>
-              <th className="text-left font-medium text-slate-500 px-2 py-4">Code</th>
-              <th className="text-left font-medium text-slate-500 px-2 py-4">Description</th>
-              <th className="text-left font-medium text-slate-500 px-2 py-4">Status</th>
-              <th className="text-right font-medium text-slate-500 px-5 py-4">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {departments.map((dept) => (
-              <tr key={dept.id} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50">
-                <td className="px-5 py-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg bg-indigo-50 flex items-center justify-center shrink-0">
-                      <Layers className="w-4 h-4 text-indigo-600" />
-                    </div>
-                    <span className="font-semibold text-slate-800">{dept.name}</span>
-                  </div>
-                </td>
-                <td className="px-2 py-4 text-slate-500 font-mono text-xs">{dept.code}</td>
-                <td className="px-2 py-4 text-slate-500 max-w-xs truncate" title={dept.description}>
-                  {dept.description || "\u2014"}
-                </td>
-                <td className="px-2 py-4">
-                  <StatusPill status={dept.status} />
-                </td>
-                <td className="px-5 py-4">
-                  <div className="flex items-center justify-end gap-2">
-                    <button
-                      type="button"
-                      onClick={() => onView(dept)}
-                      aria-label={`View ${dept.name}`}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onEdit(dept)}
-                      aria-label={`Edit ${dept.name}`}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-indigo-600 transition-colors"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onDelete(dept.id)}
-                      aria-label={`Delete ${dept.name}`}
-                      className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-slate-200"><th className="px-5 py-4 text-left font-medium text-slate-500">Department</th><th className="px-2 py-4 text-left font-medium text-slate-500">Code</th><th className="px-2 py-4 text-left font-medium text-slate-500">Description</th><th className="px-2 py-4 text-left font-medium text-slate-500">Status</th><th className="px-5 py-4 text-right font-medium text-slate-500">Actions</th></tr></thead><tbody>
+      {departments.map((department) => <tr key={department.id} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50"><td className="px-5 py-4"><div className="flex items-center gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50"><Layers className="h-4 w-4 text-indigo-600" /></div><span className="font-semibold text-slate-800">{department.departmentName}</span></div></td><td className="px-2 py-4 font-mono text-xs text-slate-500">{department.departmentCode}</td><td className="max-w-xs truncate px-2 py-4 text-slate-500" title={department.description ?? ""}>{department.description || "—"}</td><td className="px-2 py-4"><StatusPill status={department.status} /></td><td className="px-5 py-4"><div className="flex items-center justify-end gap-2"><Action label={`View ${department.departmentName}`} onClick={() => onView(department)}><Eye className="h-3.5 w-3.5" /></Action><Action label={`Edit ${department.departmentName}`} onClick={() => onEdit(department)}><Pencil className="h-3.5 w-3.5" /></Action><Action label={`Delete ${department.departmentName}`} onClick={() => onDelete(department)} danger><Trash2 className="h-3.5 w-3.5" /></Action></div></td></tr>)}
+    </tbody></table></div></div>
   );
+}
+
+function Action({ label, onClick, danger = false, children }: { label: string; onClick: () => void; danger?: boolean; children: React.ReactNode }) {
+  return <button type="button" onClick={onClick} aria-label={label} className={`flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition-colors hover:bg-slate-50 ${danger ? "hover:bg-rose-50 hover:text-rose-600" : "hover:text-indigo-600"}`}>{children}</button>;
 }

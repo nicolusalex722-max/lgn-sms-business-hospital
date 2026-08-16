@@ -1,18 +1,12 @@
 "use client";
 
-import { ArrowLeft, Pencil, Trash2, Hash, Building2, Phone, Store, FileText } from "lucide-react";
+import { ArrowLeft, Pencil, Hash, Building2, Phone } from "lucide-react";
+import type { Company } from "@/lib/types";
 
 interface CompanyProfileHeaderProps {
-  name: string;
-  email: string;
-  status: string;
-  vendorNumber: string;
-  phone: string;
-  shopsCount: number;
-  contractsCount: number;
+  company: Company;
   onBack: () => void;
   onEdit: () => void;
-  onDeactivate: () => void;
 }
 
 function initials(name: string) {
@@ -35,16 +29,9 @@ function Chip({ icon: Icon, label }: { icon: React.ElementType; label: string })
 }
 
 export default function CompanyProfileHeader({
-  name,
-  email,
-  status,
-  vendorNumber,
-  phone,
-  shopsCount,
-  contractsCount,
+  company,
   onBack,
   onEdit,
-  onDeactivate,
 }: CompanyProfileHeaderProps) {
   return (
     <div>
@@ -68,14 +55,6 @@ export default function CompanyProfileHeader({
             <Pencil className="w-3.5 h-3.5" />
             Edit
           </button>
-          <button
-            type="button"
-            onClick={onDeactivate}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg border border-rose-200 text-sm font-medium text-rose-600 hover:bg-rose-50 transition-colors"
-          >
-            <Trash2 className="w-3.5 h-3.5" />
-            Deactivate
-          </button>
         </div>
       </div>
 
@@ -85,26 +64,24 @@ export default function CompanyProfileHeader({
         <div className="flex items-start gap-4">
           <div className="relative shrink-0">
             <div className="w-16 h-16 rounded-2xl bg-indigo-500 flex items-center justify-center text-white text-xl font-bold">
-              {initials(name)}
+              {initials(company.companyName)}
             </div>
             <span className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white" />
           </div>
 
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl font-bold text-slate-800">{name}</h1>
+              <h1 className="text-xl font-bold text-slate-800">{company.companyName}</h1>
               <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                {status}
+                {company.status}
               </span>
             </div>
-            <p className="text-sm text-slate-400 mt-0.5">{email}</p>
+            <p className="text-sm text-slate-400 mt-0.5">{company.email}</p>
 
             <div className="flex items-center gap-2 flex-wrap mt-3">
-              <Chip icon={Hash} label={vendorNumber} />
-              <Chip icon={Building2} label={name} />
-              <Chip icon={Phone} label={phone} />
-              {/* <Chip icon={Store} label={`${shopsCount} Shops`} /> */}
-              <Chip icon={FileText} label={`${contractsCount} Contracts`} />
+              {company.tin && <Chip icon={Hash} label={company.tin} />}
+              <Chip icon={Building2} label={company.displayName} />
+              {company.phone && <Chip icon={Phone} label={company.phone} />}
             </div>
           </div>
         </div>

@@ -49,6 +49,7 @@ export default function DashboardShell({ clientType }: DashboardShellProps) {
             <School className="w-4 h-4" />
             School
           </button>
+          
         </div>
       )}
 

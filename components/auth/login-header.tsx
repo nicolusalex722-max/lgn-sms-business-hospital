@@ -10,7 +10,7 @@ export default function LoginHeader() {
       {/* Tanzania Emblem */}
       <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-white shadow-lg ring-4 ring-emerald-100">
         <Image
-          src="/images/tanzania-logo.png"
+          src="/lgn1-logo.png"
           alt="lgn"
           width={72}
           height={72}

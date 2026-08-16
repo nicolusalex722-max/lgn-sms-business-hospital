@@ -119,6 +119,77 @@ export const COMPANY_SUBSCRIPTION_STATUSES: CompanySubscriptionStatus[] = [
   "Cancelled",
 ];
 
+// Departments
+
+export type DepartmentStatus =
+  | "Active"
+  | "Inactive";
+
+
+export const DEPARTMENT_STATUSES: DepartmentStatus[] = [
+  "Active",
+  "Inactive",
+];
+
+
+export type Department = {
+  id: string;
+
+  /**
+   * Tenant/company that owns this department.
+   *
+   * This value is populated by the server from the
+   * authenticated CompanyAdmin's company context.
+   */
+  companyId: string;
+
+  departmentName: string;
+  departmentCode: string;
+
+  status: DepartmentStatus;
+
+  description: string | null;
+
+  createdAt: string;
+  updatedAt: string;
+};
+
+////////////////////////////////////////////////////////////
+// Branches
+////////////////////////////////////////////////////////////
+
+export type BranchStatus =
+  | "Active"
+  | "Inactive";
+
+
+export const BRANCH_STATUSES: BranchStatus[] = [
+  "Active",
+  "Inactive",
+];
+
+
+export type Branch = {
+  id: string;
+
+  /**
+   * Company that owns this branch.
+   *
+   * This is determined by the authenticated user's
+   * company context and is never supplied by the UI.
+   */
+  companyId: string;
+
+  branchName: string;
+  branchCode: string;
+  location: string | null;
+
+  status: BranchStatus;
+
+  createdAt: string;
+  updatedAt: string;
+};
+
 // Authentication & Authorization
 
 export type SystemRole =
@@ -283,11 +354,7 @@ export type Book = {
   availableCopies: number;
 };
 
-export type Branch = {
-  id: string;
-  name: string;
-  location: string;
-};
+
 
 export type RequestStatus = "Pending" | "Approved" | "Rejected";
 

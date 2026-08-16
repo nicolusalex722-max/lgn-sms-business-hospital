@@ -91,9 +91,7 @@ function mapCompanySubscription(
   };
 }
 
-/* -------------------------------------------------------------------------- */
-/* Status Mapping                                                             */
-/* -------------------------------------------------------------------------- */
+// Status Mapping                                                             
 
 function mapSubscriptionStatus(
   status: CompanySubscriptionStatus
@@ -119,9 +117,7 @@ function mapSubscriptionStatus(
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* Date Mapping                                                               */
-/* -------------------------------------------------------------------------- */
+// Date Mapping                                                               
 
 function normalizeEndDate(
   endDate: string | null | undefined
@@ -133,9 +129,7 @@ function normalizeEndDate(
   return endDate;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Validation Error                                                           */
-/* -------------------------------------------------------------------------- */
+// Validation Error                                                           
 
 function getValidationError(
   error: {
@@ -146,9 +140,7 @@ function getValidationError(
   return error.issues[0]?.message ?? fallback;
 }
 
-/* -------------------------------------------------------------------------- */
-/* GET ALL                                                                    */
-/* -------------------------------------------------------------------------- */
+// GET ALL                                                                    
 
 export async function getCompanySubscriptions(): Promise<
   CompanySubscriptionActionResult<CompanySubscription[]>
@@ -196,9 +188,7 @@ export async function getCompanySubscriptions(): Promise<
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* GET BY COMPANY ID                                                          */
-/* -------------------------------------------------------------------------- */
+// GET BY COMPANY ID                                                          
 
 export async function getCompanySubscriptionsByCompanyId(
   companyId: string
@@ -256,9 +246,7 @@ export async function getCompanySubscriptionsByCompanyId(
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* GET BY ID                                                                  */
-/* -------------------------------------------------------------------------- */
+// GET BY ID                                                                 
 
 export async function getCompanySubscriptionById(
   id: string
@@ -317,9 +305,7 @@ export async function getCompanySubscriptionById(
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* CREATE                                                                     */
-/* -------------------------------------------------------------------------- */
+// CREATE                                                                     
 
 export async function createCompanySubscription(
   input: CompanySubscriptionCreateInput
@@ -327,9 +313,7 @@ export async function createCompanySubscription(
   CompanySubscriptionActionResult<CompanySubscription>
 > {
   try {
-    /* ---------------------------------------------------------------------- */
-    /* Validation                                                             */
-    /* ---------------------------------------------------------------------- */
+    // Validation                                                             
 
     const validation =
       companySubscriptionCreateSchema.safeParse(input);
@@ -349,9 +333,7 @@ export async function createCompanySubscription(
     const supabase =
       await createSupabaseServerClient();
 
-    /* ---------------------------------------------------------------------- */
-    /* Insert                                                                 */
-    /* ---------------------------------------------------------------------- */
+    // Insert                                                                
 
     const { data, error } = await supabase
       .from("company_subscriptions")
