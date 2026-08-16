@@ -91,10 +91,6 @@ export const DEFAULT_POLICY: LibraryPolicy = {
   lateFeePerDay: 500, // TZS
 };
 
-export const MOCK_BRANCHES: Branch[] = [
-  { id: "b1", name: "Main Library", location: "Kinondoni, Dar es Salaam" },
-  { id: "b2", name: "City Campus Branch", location: "Ilala, Dar es Salaam" },
-];
 
 export const MOCK_BOOKS: Book[] = [
   {
