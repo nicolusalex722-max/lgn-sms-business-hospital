@@ -291,6 +291,7 @@ export type CompanyUser = {
   status: CompanyUserStatus;
 
   createdBy: string | null;
+  phone: string | null;
 
   createdAt: string;
 
