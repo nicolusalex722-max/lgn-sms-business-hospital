@@ -273,6 +273,32 @@ export const COMPANY_USER_STATUSES: CompanyUserStatus[] = [
   "Suspended",
 ];
 
+/**
+ * Employee information returned together with a CompanyUser.
+ *
+ * This is intentionally a lightweight representation of an employee.
+ * It is NOT the complete Employee entity.
+ *
+ * Use Employee when the application needs the complete employee record.
+ * Use CompanyUserEmployee when displaying employee information attached
+ * to a company user.
+ */
+export type CompanyUserEmployee = {
+  id: string;
+
+  firstName: string;
+  middleName: string | null;
+  lastName: string;
+
+  email: string;
+  phone: string | null;
+
+  departmentId: string | null;
+  branchId: string | null;
+
+  position: string | null;
+};
+
 export type CompanyUser = {
   id: string;
 
@@ -291,13 +317,20 @@ export type CompanyUser = {
   status: CompanyUserStatus;
 
   createdBy: string | null;
+
   phone: string | null;
 
   createdAt: string;
 
   updatedAt: string;
 
-  employee?: Employee | null;
+  /**
+   * Lightweight employee information.
+   *
+   * This is populated when the company user is linked
+   * to an employee.
+   */
+  employee?: CompanyUserEmployee | null;
 
   displayName?: string | null;
 };
@@ -305,9 +338,16 @@ export type CompanyUser = {
 // Company User Creation
 
 export type CompanyUserCreateInput = {
-  username: string;
+  employeeId: string;
+
   email: string;
+
   password: string;
+
+  displayName: string;
+
+  phone: string | null;
+
   role: CompanyUserRole;
 };
 
