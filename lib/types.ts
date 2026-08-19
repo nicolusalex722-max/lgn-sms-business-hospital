@@ -258,34 +258,14 @@ export type CompanyAdminCreateInput = {
 
 export type CompanyUserRole = "User";
 
+export const COMPANY_USER_ROLES: CompanyUserRole[] = [
+  "User",
+];
+
 export type CompanyUserStatus =
   | "Active"
   | "Inactive"
   | "Suspended";
-
-export type CompanyUser = {
-  id: string;
-  authUserId: string;
-
-  companyId: string;
-
-  employeeId: string | null;
-
-  username: string;
-  email: string;
-
-  role: CompanyUserRole;
-  status: CompanyUserStatus;
-
-  createdBy: string | null;
-
-  createdAt: string;
-  updatedAt: string;
-};
-
-export const COMPANY_USER_ROLES: CompanyUserRole[] = [
-  "User",
-];
 
 export const COMPANY_USER_STATUSES: CompanyUserStatus[] = [
   "Active",
@@ -293,6 +273,33 @@ export const COMPANY_USER_STATUSES: CompanyUserStatus[] = [
   "Suspended",
 ];
 
+export type CompanyUser = {
+  id: string;
+
+  authUserId: string;
+
+  companyId: string;
+
+  employeeId: string | null;
+
+  username: string;
+
+  email: string;
+
+  role: CompanyUserRole;
+
+  status: CompanyUserStatus;
+
+  createdBy: string | null;
+
+  createdAt: string;
+
+  updatedAt: string;
+
+  employee?: Employee | null;
+
+  displayName?: string | null;
+};
 
 // Company User Creation
 
