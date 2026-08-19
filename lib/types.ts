@@ -266,12 +266,19 @@ export type CompanyUserStatus =
 export type CompanyUser = {
   id: string;
   authUserId: string;
+
   companyId: string;
+
+  employeeId: string | null;
+
   username: string;
   email: string;
+
   role: CompanyUserRole;
   status: CompanyUserStatus;
+
   createdBy: string | null;
+
   createdAt: string;
   updatedAt: string;
 };
@@ -312,6 +319,57 @@ export type CompanyWithAdminCreateInput = {
 
   admin: CompanyAdminCreateInput;
 };
+
+/* -------------------------------------------------------------------------- */
+/* Employees                                                                  */
+/* -------------------------------------------------------------------------- */
+
+export type EmployeeStatus =
+  | "Active"
+  | "Inactive"
+  | "Suspended";
+
+export const EMPLOYEE_STATUSES: EmployeeStatus[] = [
+  "Active",
+  "Inactive",
+  "Suspended",
+];
+
+export type Employee = {
+  id: string;
+
+  companyId: string;
+
+  employeeNumber: string;
+
+  firstName: string;
+  middleName: string | null;
+  lastName: string;
+
+  email: string | null;
+  phone: string | null;
+
+  departmentId: string | null;
+  branchId: string | null;
+
+  position: string;
+
+  salary: number | null;
+
+  birthdate: string | null;
+
+  nextOfKinName: string | null;
+  nextOfKinPhone: string | null;
+
+  guarantorName: string | null;
+  guarantorPhone: string | null;
+
+  status: EmployeeStatus;
+
+  createdAt: string;
+  updatedAt: string;
+};
+
 
 //TRANSACTION
 export type Transaction = {

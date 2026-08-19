@@ -1,110 +1,141 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Plus, Search, SlidersHorizontal, Grid3x3, LayoutGrid } from "lucide-react";
-import UserTable, { AppUser } from "@/components/company-components/Usertable";
+import { Plus, Search, SlidersHorizontal } from "lucide-react";
+
 import UserForm from "@/components/company-components/Userform";
-import Modal from "@/components/dashboard/Modal";
+import UserTable from "@/components/company-components/Usertable";
 import FilterDropdown from "@/components/dashboard/Filterdropdown";
+import Modal from "@/components/dashboard/Modal";
+import { useCompanyUsers } from "@/hooks/use-company-users";
+import { useEmployees } from "@/hooks/use-employees";
+import type { CompanyUser } from "@/lib/types";
+import type {
+  CompanyUserCreateInput,
+  CompanyUserUpdateInput,
+} from "@/lib/validations/company-users-schema";
 
-const ROLE_OPTIONS = ["Admin", "FIELD_STAFF", "Finance", "Manager"];
-
-const INITIAL_DATA: AppUser[] = [
-  { id: "u-001", name: "Nicolaus", email: "nico@lgn.com", phone: "+255700000000", role: "Admin", linkedEmployee: "Admin Zacbook - manager", lastLogin: "just now", emailVerified: "Verified", status: "Active" },
-  { id: "u-002", name: "Asha", email: "asha@gmail.com", phone: "+255758303307", role: "FIELD_STAFF", linkedEmployee: "", lastLogin: "2 weeks ago", emailVerified: "Verified", status: "Active" },
-  { id: "u-003", name: "Maalim", email: "hussei1@gmail.com", phone: "+255758303309", role: "Manager", linkedEmployee: "", lastLogin: "3 weeks ago", emailVerified: "Pending", status: "Active" },
-
-];
+const ROLE_OPTIONS = ["User"];
 
 export default function UsersPage() {
-  const [users, setUsers] = useState<AppUser[]>(INITIAL_DATA);
+  const {
+    companyUsers,
+    loading,
+    error,
+    fetchCompanyUsers,
+    createCompanyUser,
+    updateCompanyUser,
+    deleteCompanyUser,
+  } = useCompanyUsers();
+  const { employees } = useEmployees();
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("All");
-
-  const [createOpen, setCreateOpen] = useState(false);
-  const [editOpen, setEditOpen] = useState(false);
-  const [editingUser, setEditingUser] = useState<AppUser | null>(null);
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<CompanyUser | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   const filtered = useMemo(() => {
-    return users.filter((u) => {
-      const q = search.toLowerCase();
-      const matchesSearch = u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q);
-      const matchesRole = roleFilter === "All" || u.role === roleFilter;
-      return matchesSearch && matchesRole;
+    const query = search.trim().toLowerCase();
+    return companyUsers.filter((user) => {
+      const name =
+        user.displayName ??
+        [user.employee?.firstName, user.employee?.lastName]
+          .filter(Boolean)
+          .join(" ");
+      const matchesSearch =
+        !query ||
+        name.toLowerCase().includes(query) ||
+        user.email.toLowerCase().includes(query) ||
+        user.username.toLowerCase().includes(query);
+      return (
+        matchesSearch && (roleFilter === "All" || user.role === roleFilter)
+      );
     });
-  }, [users, search, roleFilter]);
+  }, [companyUsers, roleFilter, search]);
 
-  const handleCreate = (data: Omit<AppUser, "id" | "lastLogin" | "emailVerified">) => {
-    setUsers((prev) => [
-      { ...data, id: crypto.randomUUID(), lastLogin: "Never", emailVerified: "Pending" },
-      ...prev,
-    ]);
-    setCreateOpen(false);
+  const closeForm = () => {
+    if (!submitting) {
+      setFormOpen(false);
+      setEditingUser(null);
+    }
+  };
+  const save = async (
+    data: CompanyUserCreateInput | CompanyUserUpdateInput,
+  ) => {
+    setSubmitting(true);
+    const result = editingUser
+      ? await updateCompanyUser(editingUser.id, data as CompanyUserUpdateInput)
+      : await createCompanyUser(data as CompanyUserCreateInput);
+    setSubmitting(false);
+    if (result.success) {
+      setFormOpen(false);
+      setEditingUser(null);
+    }
+  };
+  const remove = async (user: CompanyUser) => {
+    if (
+      window.confirm(
+        `Delete ${user.displayName ?? user.email}? This also removes the login account and cannot be undone.`,
+      )
+    )
+      await deleteCompanyUser(user.id);
   };
 
-  const openEdit = (user: AppUser) => {
-    setEditingUser(user);
-    setEditOpen(true);
-  };
-  const closeEdit = () => {
-    setEditOpen(false);
-    setEditingUser(null);
-  };
-  const handleEditSubmit = (data: Omit<AppUser, "id" | "lastLogin" | "emailVerified">) => {
-    if (!editingUser) return;
-    setUsers((prev) => prev.map((u) => (u.id === editingUser.id ? { ...u, ...data } : u)));
-    closeEdit();
-  };
+  if (loading)
+    return (
+      <p className="py-10 text-center text-sm text-slate-500">Loading users…</p>
+    );
+  if (!companyUsers.length && error)
+    return (
+      <div className="py-10 text-center">
+        <p className="text-sm text-rose-600">{error}</p>
+        <button
+          type="button"
+          onClick={() => void fetchCompanyUsers()}
+          className="mt-4 rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+        >
+          Try again
+        </button>
+      </div>
+    );
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">User Management</h1>
-          <p className="text-sm text-slate-500 mt-1">Manage system users, create, update, and delete accounts</p>
+          <p className="mt-1 text-sm text-slate-500">
+            Manage login accounts for employees in your company.
+          </p>
         </div>
         <button
           type="button"
-          onClick={() => setCreateOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors shrink-0"
+          onClick={() => {
+            setEditingUser(null);
+            setFormOpen(true);
+          }}
+          className="inline-flex shrink-0 items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="h-4 w-4" />
           Create User
         </button>
       </div>
-
-      <div className="bg-white rounded-xl border border-slate-200 p-6">
-        <div className="flex items-center justify-between mb-5">
-          <div>
-            <h2 className="text-lg font-bold text-slate-800">Users Directory</h2>
-            <p className="text-sm text-slate-500">View and manage all users in your company</p>
-          </div>
-          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-            <button
-              type="button"
-              aria-label="Table view"
-              className="w-9 h-9 flex items-center justify-center rounded-md bg-white text-indigo-600 shadow-sm"
-            >
-              <Grid3x3 className="w-4 h-4" />
-            </button>
-            <button
-              type="button"
-              aria-label="Card view"
-              className="w-9 h-9 flex items-center justify-center rounded-md text-slate-500 hover:text-slate-700"
-            >
-              <LayoutGrid className="w-4 h-4" />
-            </button>
-          </div>
+      <div className="rounded-xl border border-slate-200 bg-white p-6">
+        <div className="mb-5">
+          <h2 className="text-lg font-bold text-slate-800">Users Directory</h2>
+          <p className="text-sm text-slate-500">
+            View and manage all users in your company.
+          </p>
         </div>
-        <div className="flex flex-col sm:flex-row gap-3 mb-5">
+        <div className="mb-5 flex flex-col gap-3 sm:flex-row">
           <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
+            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(event) => setSearch(event.target.value)}
               placeholder="Search users..."
-              className="w-full pl-11 pr-4 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+              className="w-full rounded-lg border border-slate-300 py-2.5 pl-11 pr-4 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
           </div>
           <FilterDropdown
@@ -112,28 +143,42 @@ export default function UsersPage() {
             icon={SlidersHorizontal}
             value={roleFilter}
             options={ROLE_OPTIONS}
-            allLabel="Filters"
+            allLabel="All roles"
             onChange={setRoleFilter}
           />
         </div>
-
-        <div className="border border-slate-200 rounded-xl overflow-hidden">
-          <UserTable users={filtered} onEdit={openEdit} />
+        {error && <p className="mb-4 text-sm text-rose-600">{error}</p>}
+        <div className="overflow-hidden rounded-xl border border-slate-200">
+          <UserTable
+            users={filtered}
+            onEdit={(user) => {
+              setEditingUser(user);
+              setFormOpen(true);
+            }}
+            onDelete={remove}
+          />
         </div>
-
-        <p className="text-sm text-slate-500 mt-4">
-          Showing <span className="font-semibold text-slate-700">1&ndash;{filtered.length}</span> / {users.length}
+        <p className="mt-4 text-sm text-slate-500">
+          Showing{" "}
+          <span className="font-semibold text-slate-700">
+            {filtered.length}
+          </span>{" "}
+          of {companyUsers.length} users
         </p>
       </div>
-
-      {/* Create User modal */}
-      <Modal open={createOpen} onClose={() => setCreateOpen(false)} title="Create New User">
-        <UserForm onSubmit={handleCreate} onCancel={() => setCreateOpen(false)} />
-      </Modal>
-
-      {/* Edit User modal */}
-      <Modal open={editOpen} onClose={closeEdit} title="Edit User">
-        {editingUser && <UserForm initialValue={editingUser} onSubmit={handleEditSubmit} onCancel={closeEdit} />}
+      <Modal
+        open={formOpen}
+        onClose={closeForm}
+        title={editingUser ? "Edit User" : "Create New User"}
+      >
+        <UserForm
+          initialValue={editingUser}
+          employees={employees}
+          submitting={submitting}
+          error={error}
+          onSubmit={save}
+          onCancel={closeForm}
+        />
       </Modal>
     </div>
   );

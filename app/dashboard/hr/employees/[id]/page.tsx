@@ -2,128 +2,32 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Pencil, User, Mail, Phone, Cake, Briefcase, Building2, MapPin, Wallet, UserCheck, PhoneCall } from "lucide-react";
-import { getEmployeeById } from "@/components/hr-components/Employeedata";
-import type { Employee } from "@/components/hr-components/Employeetable";
-import EmployeeForm from "@/components/hr-components/Employeeform";
-import { InfoRow, InfoCard } from "@/components/company-components/Inforow";
+import { ArrowLeft, Pencil } from "lucide-react";
+
+import { InfoCard, InfoRow } from "@/components/company-components/Inforow";
 import Modal from "@/components/dashboard/Modal";
-
-function formatCurrency(value: number) {
-  return `TZS ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-}
-
-function formatDate(value: string) {
-  if (!value) return "\u2014";
-  return new Date(value).toLocaleDateString("en-GB", { day: "2-digit", month: "long", year: "numeric" });
-}
-
-function initials(first: string, last: string) {
-  return `${first[0] ?? ""}${last[0] ?? ""}`.toUpperCase();
-}
+import EmployeeForm from "@/components/hr-components/Employeeform";
+import { useEmployees } from "@/hooks/use-employees";
+import type { EmployeeUpdateInput } from "@/lib/validations/employees-schema";
 
 export default function EmployeeProfilePage() {
-  const params = useParams<{ id: string }>();
+  const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { employees, loading, error, updateEmployee } = useEmployees();
+  const [editing, setEditing] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const employee = employees.find((item) => item.id === id);
 
-  const [employee, setEmployee] = useState<Employee | undefined>(() => getEmployeeById(params.id));
-  const [editOpen, setEditOpen] = useState(false);
-
-  if (!employee) {
-    return (
-      <div className="bg-white rounded-xl border border-slate-200 p-10 text-center">
-        <p className="text-sm text-slate-500">Employee not found.</p>
-        <button
-          type="button"
-          onClick={() => router.push("/dashboard/company-profile/employees")}
-          className="mt-3 text-sm font-medium text-indigo-600 hover:text-indigo-700"
-        >
-          Back to Employee Management
-        </button>
-      </div>
-    );
-  }
-
-  const handleSave = (data: Omit<Employee, "id">) => {
-    // TODO: persist via your API/Prisma, e.g. PATCH /api/employees/[id]
-    setEmployee({ ...data, id: employee.id });
-    setEditOpen(false);
+  const save = async (data: EmployeeUpdateInput) => {
+    setSubmitting(true);
+    const result = await updateEmployee(id, data);
+    setSubmitting(false);
+    if (result.success) setEditing(false);
   };
 
-  const fullName = `${employee.firstName} ${employee.middleName ? employee.middleName + " " : ""}${employee.lastName}`;
+  if (loading) return <p className="py-10 text-center text-sm text-slate-500">Loading employee…</p>;
+  if (!employee) return <div className="rounded-xl border border-slate-200 bg-white p-10 text-center"><p className="text-sm text-slate-500">{error ?? "Employee not found."}</p><button type="button" onClick={() => router.push("/dashboard/hr/employees")} className="mt-3 text-sm font-medium text-indigo-600">Back to Employee Management</button></div>;
 
-  return (
-    <div className="flex flex-col gap-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-4">
-          <button
-            type="button"
-            onClick={() => router.push("/dashboard/company-profile/employees")}
-            aria-label="Back to Employee Management"
-            className="mt-2 text-slate-400 hover:text-slate-600 transition-colors"
-          >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-
-          <div className="w-14 h-14 rounded-2xl bg-indigo-600 flex items-center justify-center text-white text-lg font-bold shrink-0">
-            {initials(employee.firstName, employee.lastName)}
-          </div>
-
-          <div>
-            <h1 className="text-xl font-bold text-slate-800">{fullName}</h1>
-            <p className="text-sm text-slate-500">{employee.position || "No position set"}</p>
-            <div className="flex items-center gap-2 mt-2 flex-wrap">
-              {employee.department && (
-                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700">
-                  {employee.department}
-                </span>
-              )}
-              {employee.branch && (
-                <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-slate-100 text-slate-600">
-                  {employee.branch}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setEditOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors shrink-0"
-        >
-          <Pencil className="w-4 h-4" />
-          Edit Employee
-        </button>
-      </div>
-
-      {/* Sections */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <InfoCard title="Personal Information">
-          <InfoRow icon={User} iconBg="bg-indigo-50" iconColor="text-indigo-600" label="Full Name" value={fullName} />
-          <InfoRow icon={Mail} iconBg="bg-blue-50" iconColor="text-blue-600" label="Email" value={employee.email} />
-          <InfoRow icon={Phone} iconBg="bg-sky-50" iconColor="text-sky-600" label="Phone" value={employee.phone} />
-          <InfoRow icon={Cake} iconBg="bg-pink-50" iconColor="text-pink-600" label="Birthdate" value={formatDate(employee.birthdate)} />
-        </InfoCard>
-
-        <InfoCard title="Employment Details">
-          <InfoRow icon={Briefcase} iconBg="bg-amber-50" iconColor="text-amber-600" label="Position" value={employee.position} />
-          <InfoRow icon={Building2} iconBg="bg-indigo-50" iconColor="text-indigo-600" label="Department" value={employee.department || "Not assigned"} />
-          <InfoRow icon={MapPin} iconBg="bg-teal-50" iconColor="text-teal-600" label="Branch" value={employee.branch || "Not assigned"} />
-          <InfoRow icon={Wallet} iconBg="bg-emerald-50" iconColor="text-emerald-600" label="Salary" value={formatCurrency(employee.salary)} />
-        </InfoCard>
-
-        <InfoCard title="Emergency Contact">
-          <InfoRow icon={UserCheck} iconBg="bg-purple-50" iconColor="text-purple-600" label="Next of Kin" value={employee.nextOfKin} />
-          <InfoRow icon={PhoneCall} iconBg="bg-sky-50" iconColor="text-sky-600" label="Guarantor Phone" value={employee.guarantorPhone} />
-        </InfoCard>
-      </div>
-
-      {/* Edit modal */}
-      <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit Employee">
-        <EmployeeForm initialValue={employee} onSubmit={handleSave} onCancel={() => setEditOpen(false)} />
-      </Modal>
-    </div>
-  );
+  const name = [employee.firstName, employee.middleName, employee.lastName].filter(Boolean).join(" ");
+  return <div className="flex flex-col gap-6"><div className="flex items-start justify-between gap-4"><div className="flex items-start gap-4"><button type="button" onClick={() => router.push("/dashboard/hr/employees")} aria-label="Back to Employee Management" className="mt-2 text-slate-400 hover:text-slate-600"><ArrowLeft className="h-5 w-5" /></button><div><h1 className="text-xl font-bold text-slate-800">{name}</h1><p className="text-sm text-slate-500">{employee.position}</p><p className="mt-1 font-mono text-xs text-slate-400">{employee.employeeNumber}</p></div></div><button type="button" onClick={() => setEditing(true)} className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-indigo-700"><Pencil className="h-4 w-4" />Edit Employee</button></div><div className="grid grid-cols-1 gap-4 lg:grid-cols-2"><InfoCard title="Personal Information"><InfoRow icon={() => null} iconBg="bg-slate-100" iconColor="text-slate-600" label="Email" value={employee.email ?? ""} /><InfoRow icon={() => null} iconBg="bg-slate-100" iconColor="text-slate-600" label="Phone" value={employee.phone ?? ""} /><InfoRow icon={() => null} iconBg="bg-slate-100" iconColor="text-slate-600" label="Birthdate" value={employee.birthdate ?? ""} /></InfoCard><InfoCard title="Employment Details"><InfoRow icon={() => null} iconBg="bg-slate-100" iconColor="text-slate-600" label="Department ID" value={employee.departmentId ?? ""} /><InfoRow icon={() => null} iconBg="bg-slate-100" iconColor="text-slate-600" label="Branch ID" value={employee.branchId ?? ""} /><InfoRow icon={() => null} iconBg="bg-slate-100" iconColor="text-slate-600" label="Salary" value={employee.salary === null ? "" : `TZS ${employee.salary.toLocaleString()}`} /><InfoRow icon={() => null} iconBg="bg-slate-100" iconColor="text-slate-600" label="Status" value={employee.status} /></InfoCard></div><Modal open={editing} onClose={() => !submitting && setEditing(false)} title="Edit Employee"><EmployeeForm initialValue={employee} submitting={submitting} error={error} onSubmit={(data) => save(data as EmployeeUpdateInput)} onCancel={() => setEditing(false)} /></Modal></div>;
 }

@@ -1,9 +1,10 @@
 "use client";
 
-import Link from "next/link";
-import { Pencil } from "lucide-react";
+import { Pencil, Trash2 } from "lucide-react";
+import type { Employee } from "@/lib/types";
 
-export interface Employee {
+/** @deprecated Legacy import/export and seed-data shape. */
+export interface LegacyEmployee {
   id: string;
   firstName: string;
   middleName: string;
@@ -19,79 +20,13 @@ export interface Employee {
   guarantorPhone: string;
 }
 
-interface EmployeeTableProps {
-  employees: Employee[];
-  onEdit: (employee: Employee) => void;
-}
+export type { LegacyEmployee as Employee };
 
-function formatCurrency(value: number) {
-  return `TZS ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-}
+interface EmployeeTableProps { employees: Employee[]; onEdit: (employee: Employee) => void; onDelete: (employee: Employee) => void; }
+const formatCurrency = (value: number | null) => value === null ? "—" : `TZS ${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+const shortId = (value: string | null) => value ? `${value.slice(0, 8)}…` : "Not assigned";
 
-export default function EmployeeTable({ employees, onEdit }: EmployeeTableProps) {
-  if (employees.length === 0) {
-    return (
-      <div className="bg-white rounded-xl border border-slate-200 p-10 text-center">
-        <p className="text-sm text-slate-500">No employees match your search.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-slate-200">
-              <th className="text-left font-medium text-slate-500 px-5 py-4">Name</th>
-              <th className="text-left font-medium text-slate-500 px-2 py-4">Position</th>
-              <th className="text-left font-medium text-slate-500 px-2 py-4">Department</th>
-              <th className="text-left font-medium text-slate-500 px-2 py-4">Phone</th>
-              <th className="text-left font-medium text-slate-500 px-2 py-4">Email</th>
-              <th className="text-right font-medium text-slate-500 px-2 py-4">Salary</th>
-              <th className="text-right font-medium text-slate-500 px-5 py-4">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {employees.map((emp) => (
-              <tr key={emp.id} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50">
-                <td className="px-5 py-4 font-semibold text-slate-800">
-                  <Link
-                    href={`/dashboard/company-profile/employees/${emp.id}`}
-                    className="hover:text-indigo-600 hover:underline transition-colors"
-                  >
-                    {emp.firstName} {emp.middleName ? `${emp.middleName} ` : ""}
-                    {emp.lastName}
-                  </Link>
-                </td>
-                <td className="px-2 py-4 text-slate-600">{emp.position || "\u2014"}</td>
-                <td className="px-2 py-4">
-                  {emp.department ? (
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700">
-                      {emp.department}
-                    </span>
-                  ) : (
-                    <span className="text-slate-400">Not assigned</span>
-                  )}
-                </td>
-                <td className="px-2 py-4 text-slate-500">{emp.phone || "\u2014"}</td>
-                <td className="px-2 py-4 text-slate-500">{emp.email}</td>
-                <td className="px-2 py-4 text-right text-slate-700">{formatCurrency(emp.salary)}</td>
-                <td className="px-5 py-4 text-right">
-                  <button
-                    type="button"
-                    onClick={() => onEdit(emp)}
-                    aria-label={`Edit ${emp.firstName} ${emp.lastName}`}
-                    className="w-8 h-8 inline-flex items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
+export default function EmployeeTable({ employees, onEdit, onDelete }: EmployeeTableProps) {
+  if (!employees.length) return <div className="rounded-xl border border-slate-200 bg-white p-10 text-center"><p className="text-sm text-slate-500">No employees match your search.</p></div>;
+  return <div className="overflow-hidden rounded-xl border border-slate-200 bg-white"><div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-slate-200"><th className="px-5 py-4 text-left font-medium text-slate-500">Employee</th><th className="px-2 py-4 text-left font-medium text-slate-500">Position</th><th className="px-2 py-4 text-left font-medium text-slate-500">Department</th><th className="px-2 py-4 text-left font-medium text-slate-500">Phone</th><th className="px-2 py-4 text-left font-medium text-slate-500">Email</th><th className="px-2 py-4 text-right font-medium text-slate-500">Salary</th><th className="px-5 py-4 text-right font-medium text-slate-500">Actions</th></tr></thead><tbody>{employees.map((employee) => <tr key={employee.id} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50"><td className="px-5 py-4"><p className="font-semibold text-slate-800">{[employee.firstName, employee.middleName, employee.lastName].filter(Boolean).join(" ")}</p><p className="font-mono text-xs text-slate-400">{employee.employeeNumber}</p></td><td className="px-2 py-4 text-slate-600">{employee.position}</td><td className="px-2 py-4"><span title={employee.departmentId ?? ""} className="inline-flex rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700">{shortId(employee.departmentId)}</span></td><td className="px-2 py-4 text-slate-500">{employee.phone || "—"}</td><td className="px-2 py-4 text-slate-500">{employee.email || "—"}</td><td className="px-2 py-4 text-right text-slate-700">{formatCurrency(employee.salary)}</td><td className="px-5 py-4 text-right"><div className="flex justify-end gap-2"><button type="button" onClick={() => onEdit(employee)} aria-label={`Edit ${employee.firstName} ${employee.lastName}`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"><Pencil className="h-3.5 w-3.5" /></button><button type="button" onClick={() => onDelete(employee)} aria-label={`Delete ${employee.firstName} ${employee.lastName}`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-rose-50 hover:text-rose-600"><Trash2 className="h-3.5 w-3.5" /></button></div></td></tr>)}</tbody></table></div></div>;
 }

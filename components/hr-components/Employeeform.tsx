@@ -1,151 +1,47 @@
 "use client";
 
 import { useState } from "react";
-import type { Employee } from "./Employeetable";
 
-interface EmployeeFormProps {
-  initialValue?: Employee | null;
-  onSubmit: (data: Omit<Employee, "id">) => void;
-  onCancel: () => void;
-}
+import type { Employee } from "@/lib/types";
+import type { EmployeeCreateInput, EmployeeUpdateInput } from "@/lib/validations/employees-schema";
 
-const DEPARTMENT_OPTIONS = ["Collections", "Credit", "Customer Service", "Finance", "Human Resources", "Information Technology", "Operations"];
-const BRANCH_OPTIONS = ["Head Office", "Mwanza Branch", "Arusha Branch"];
+interface EmployeeFormProps { initialValue?: Employee | null; submitting: boolean; error: string | null; onSubmit: (data: EmployeeCreateInput | EmployeeUpdateInput) => Promise<void>; onCancel: () => void; }
+const STATUSES = ["Active", "Inactive", "Suspended"] as const;
+const emptyToNull = (value: string) => value.trim() || null;
 
-export default function EmployeeForm({ initialValue, onSubmit, onCancel }: EmployeeFormProps) {
-  const [firstName, setFirstName] = useState(initialValue?.firstName ?? "");
-  const [middleName, setMiddleName] = useState(initialValue?.middleName ?? "");
-  const [lastName, setLastName] = useState(initialValue?.lastName ?? "");
-  const [email, setEmail] = useState(initialValue?.email ?? "");
-  const [department, setDepartment] = useState(initialValue?.department ?? "");
-  const [branch, setBranch] = useState(initialValue?.branch ?? "");
-  const [phone, setPhone] = useState(initialValue?.phone ?? "");
-  const [salary, setSalary] = useState(initialValue ? String(initialValue.salary) : "");
-  const [birthdate, setBirthdate] = useState(initialValue?.birthdate ?? "");
-  const [position, setPosition] = useState(initialValue?.position ?? "");
-  const [nextOfKin, setNextOfKin] = useState(initialValue?.nextOfKin ?? "");
-  const [guarantorPhone, setGuarantorPhone] = useState(initialValue?.guarantorPhone ?? "");
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!firstName.trim() || !lastName.trim() || !email.trim()) return;
-
-    onSubmit({
-      firstName: firstName.trim(),
-      middleName: middleName.trim(),
-      lastName: lastName.trim(),
-      email: email.trim(),
-      department,
-      branch,
-      phone: phone.trim(),
-      salary: Number(salary) || 0,
-      birthdate,
-      position: position.trim(),
-      nextOfKin: nextOfKin.trim(),
-      guarantorPhone: guarantorPhone.trim(),
-    });
-  };
-
-  const fieldClass =
-    "px-3.5 py-2.5 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent";
+export default function EmployeeForm({ initialValue, submitting, error, onSubmit, onCancel }: EmployeeFormProps) {
+  const [form, setForm] = useState({
+    employeeNumber: initialValue?.employeeNumber ?? "",
+    firstName: initialValue?.firstName ?? "", middleName: initialValue?.middleName ?? "", lastName: initialValue?.lastName ?? "",
+    email: initialValue?.email ?? "", phone: initialValue?.phone ?? "", departmentId: initialValue?.departmentId ?? "", branchId: initialValue?.branchId ?? "",
+    position: initialValue?.position ?? "", salary: initialValue?.salary?.toString() ?? "", birthdate: initialValue?.birthdate ?? "",
+    nextOfKinName: initialValue?.nextOfKinName ?? "", nextOfKinPhone: initialValue?.nextOfKinPhone ?? "", guarantorName: initialValue?.guarantorName ?? "", guarantorPhone: initialValue?.guarantorPhone ?? "",
+    status: initialValue?.status ?? "Active" as Employee["status"],
+  });
+  const patch = (fields: Partial<typeof form>) => setForm((current) => ({ ...current, ...fields }));
+  const fieldClass = "rounded-lg border border-slate-300 px-3.5 py-2.5 text-sm focus:border-transparent focus:outline-none focus:ring-2 focus:ring-indigo-500";
   const labelClass = "text-xs font-medium text-slate-500";
 
-  return (
-    <form onSubmit={handleSubmit} className="flex flex-col gap-5 max-h-[70vh] overflow-y-auto pr-1">
-      {/* Identity */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>First Name *</label>
-          <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} required autoFocus className={fieldClass} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Middle Name</label>
-          <input type="text" value={middleName} onChange={(e) => setMiddleName(e.target.value)} className={fieldClass} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Last Name *</label>
-          <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} required className={fieldClass} />
-        </div>
-      </div>
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const values: EmployeeCreateInput = {
+      employeeNumber: form.employeeNumber.trim(), firstName: form.firstName.trim(), middleName: emptyToNull(form.middleName), lastName: form.lastName.trim(),
+      email: emptyToNull(form.email), phone: emptyToNull(form.phone), departmentId: emptyToNull(form.departmentId), branchId: emptyToNull(form.branchId),
+      position: form.position.trim(), salary: form.salary === "" ? null : Number(form.salary), birthdate: emptyToNull(form.birthdate),
+      nextOfKinName: emptyToNull(form.nextOfKinName), nextOfKinPhone: emptyToNull(form.nextOfKinPhone), guarantorName: emptyToNull(form.guarantorName), guarantorPhone: emptyToNull(form.guarantorPhone),
+    };
+    await onSubmit(initialValue ? { ...values, status: form.status } : values);
+  };
 
-      {/* Contact */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Email *</label>
-          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className={fieldClass} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Phone *</label>
-          <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required className={fieldClass} />
-        </div>
-      </div>
-
-      {/* Department / Branch — optional */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Department (optional)</label>
-          <select value={department} onChange={(e) => setDepartment(e.target.value)} className={`${fieldClass} bg-white`}>
-            <option value="">Not assigned</option>
-            {DEPARTMENT_OPTIONS.map((d) => (
-              <option key={d} value={d}>
-                {d}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Branch (optional)</label>
-          <select value={branch} onChange={(e) => setBranch(e.target.value)} className={`${fieldClass} bg-white`}>
-            <option value="">Not assigned</option>
-            {BRANCH_OPTIONS.map((b) => (
-              <option key={b} value={b}>
-                {b}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {/* Employment */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Position *</label>
-          <input type="text" value={position} onChange={(e) => setPosition(e.target.value)} required className={fieldClass} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Salary (TZS) *</label>
-          <input type="number" min="0" value={salary} onChange={(e) => setSalary(e.target.value)} required className={fieldClass} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Birthdate *</label>
-          <input type="date" value={birthdate} onChange={(e) => setBirthdate(e.target.value)} required className={fieldClass} />
-        </div>
-      </div>
-
-      {/* Emergency contact */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-slate-100">
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Next of Kin *</label>
-          <input type="text" value={nextOfKin} onChange={(e) => setNextOfKin(e.target.value)} required placeholder="Full name" className={fieldClass} />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className={labelClass}>Guarantor Phone *</label>
-          <input type="tel" value={guarantorPhone} onChange={(e) => setGuarantorPhone(e.target.value)} required className={fieldClass} />
-        </div>
-      </div>
-
-      <div className="flex justify-end gap-2 pt-2 sticky bottom-0 bg-white">
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-        >
-          Cancel
-        </button>
-        <button type="submit" className="px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors">
-          {initialValue ? "Save Changes" : "Add Employee"}
-        </button>
-      </div>
-    </form>
-  );
+  return <form onSubmit={handleSubmit} className="flex max-h-[70vh] flex-col gap-5 overflow-y-auto pr-1">
+    <Section title="Identity"><Grid><Field label="Employee number" value={form.employeeNumber} onChange={(value) => patch({ employeeNumber: value })} className={fieldClass} labelClass={labelClass} required autoFocus /><Field label="First name" value={form.firstName} onChange={(value) => patch({ firstName: value })} className={fieldClass} labelClass={labelClass} required /><Field label="Middle name" value={form.middleName} onChange={(value) => patch({ middleName: value })} className={fieldClass} labelClass={labelClass} /><Field label="Last name" value={form.lastName} onChange={(value) => patch({ lastName: value })} className={fieldClass} labelClass={labelClass} required /></Grid></Section>
+    <Section title="Contact and assignment"><Grid><Field label="Email" type="email" value={form.email} onChange={(value) => patch({ email: value })} className={fieldClass} labelClass={labelClass} /><Field label="Phone" type="tel" value={form.phone} onChange={(value) => patch({ phone: value })} className={fieldClass} labelClass={labelClass} /><Field label="Department ID" value={form.departmentId} onChange={(value) => patch({ departmentId: value })} className={fieldClass} labelClass={labelClass} /><Field label="Branch ID" value={form.branchId} onChange={(value) => patch({ branchId: value })} className={fieldClass} labelClass={labelClass} /></Grid></Section>
+    <Section title="Employment"><Grid><Field label="Position" value={form.position} onChange={(value) => patch({ position: value })} className={fieldClass} labelClass={labelClass} required /><Field label="Salary (TZS)" type="number" value={form.salary} onChange={(value) => patch({ salary: value })} className={fieldClass} labelClass={labelClass} min="0" /><Field label="Birthdate" type="date" value={form.birthdate} onChange={(value) => patch({ birthdate: value })} className={fieldClass} labelClass={labelClass} />{initialValue && <div className="flex flex-col gap-1"><label className={labelClass} htmlFor="employee-status">Status</label><select id="employee-status" value={form.status} onChange={(event) => patch({ status: event.target.value as Employee["status"] })} className={`${fieldClass} bg-white`}>{STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}</select></div>}</Grid></Section>
+    <Section title="Emergency contacts"><Grid><Field label="Next of kin name" value={form.nextOfKinName} onChange={(value) => patch({ nextOfKinName: value })} className={fieldClass} labelClass={labelClass} /><Field label="Next of kin phone" type="tel" value={form.nextOfKinPhone} onChange={(value) => patch({ nextOfKinPhone: value })} className={fieldClass} labelClass={labelClass} /><Field label="Guarantor name" value={form.guarantorName} onChange={(value) => patch({ guarantorName: value })} className={fieldClass} labelClass={labelClass} /><Field label="Guarantor phone" type="tel" value={form.guarantorPhone} onChange={(value) => patch({ guarantorPhone: value })} className={fieldClass} labelClass={labelClass} /></Grid></Section>
+    {error && <p className="text-sm text-rose-600">{error}</p>}<div className="sticky bottom-0 flex justify-end gap-2 bg-white pt-2"><button type="button" onClick={onCancel} disabled={submitting} className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60">Cancel</button><button type="submit" disabled={submitting} className="rounded-lg bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60">{submitting ? "Saving…" : initialValue ? "Save changes" : "Add employee"}</button></div>
+  </form>;
 }
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) { return <section className="flex flex-col gap-3"><h4 className="text-sm font-semibold text-slate-800">{title}</h4>{children}</section>; }
+function Grid({ children }: { children: React.ReactNode }) { return <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">{children}</div>; }
+function Field({ label, type = "text", value, onChange, className, labelClass, required = false, min, autoFocus = false }: { label: string; type?: string; value: string; onChange: (value: string) => void; className: string; labelClass: string; required?: boolean; min?: string; autoFocus?: boolean }) { const id = `employee-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`; return <div className="flex flex-col gap-1"><label className={labelClass} htmlFor={id}>{label}{required && " *"}</label><input id={id} type={type} value={value} onChange={(event) => onChange(event.target.value)} className={className} required={required} min={min} autoFocus={autoFocus} /></div>; }
