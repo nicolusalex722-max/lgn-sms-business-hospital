@@ -14,6 +14,7 @@ export default function LoginHeader() {
           alt="lgn"
           width={72}
           height={72}
+          sizes="20"
           priority
           className="object-contain"
         />
