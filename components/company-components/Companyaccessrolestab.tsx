@@ -1,8 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Plus, Pencil, Trash2 } from "lucide-react";
 import Modal from "@/components/dashboard/Modal";
+
+import { useRoles } from "@/hooks/use-roles";
+import { useRolePermissions } from "@/hooks/use-role-permissions";
 
 const ACTIONS = ["view", "create", "edit", "delete"] as const;
 type Action = (typeof ACTIONS)[number];
@@ -14,413 +17,291 @@ const ACTION_LABELS: Record<Action, string> = {
   delete: "Delete",
 };
 
-type ModulePermissions = Record<Action, boolean>;
-type RolePermissions = Record<string, ModulePermissions>;
-type AllPermissions = Record<string, RolePermissions>;
-
-const INITIAL_MODULES = ["Dashboard", "Companies", "Products", "Subscriptions", "Reports", "Settings"];
-const INITIAL_ROLES = ["Admin", "Finance", "Staff"];
-
-function emptyModulePerms(defaultOn: boolean): ModulePermissions {
-  return { view: defaultOn, create: defaultOn, edit: defaultOn, delete: defaultOn };
-}
-
-function buildRolePermissions(modules: string[], defaultViewOnly: boolean): RolePermissions {
-  const perms: RolePermissions = {};
-  for (const mod of modules) {
-    perms[mod] = defaultViewOnly ? { ...emptyModulePerms(false), view: true } : emptyModulePerms(true);
-  }
-  return perms;
-}
-
-function buildDefaultPermissions(): AllPermissions {
-  const state: AllPermissions = {};
-  for (const role of INITIAL_ROLES) {
-    state[role] = buildRolePermissions(INITIAL_MODULES, role !== "Admin");
-  }
-  return state;
-}
+type PermissionItem = {
+  id: string;
+  permission_key: string;
+  module?: string | null;
+  action?: string | null;
+  description?: string | null;
+};
 
 export default function CompanyAccessRolesTab() {
-  const [modules, setModules] = useState<string[]>(INITIAL_MODULES);
-  const [roles, setRoles] = useState<string[]>(INITIAL_ROLES);
-  const [permissions, setPermissions] = useState<AllPermissions>(buildDefaultPermissions);
-  const [activeRole, setActiveRole] = useState(roles[0]);
+  const { roles, loading: rolesLoading, error: rolesError, createRole, updateRole, deleteRole, fetchRole } = useRoles();
+  const {
+    permissionsByModule,
+    loading: permsLoading,
+    error: permsError,
+    fetchRolePermissions,
+    saveRolePermissions,
+  } = useRolePermissions();
 
+  const [selectedRoleId, setSelectedRoleId] = useState<string | null>(null);
+  const [assignedPermissionIds, setAssignedPermissionIds] = useState<Set<string>>(new Set());
+  const [loadingAssigned, setLoadingAssigned] = useState(false);
+  const [savingPermissions, setSavingPermissions] = useState(false);
+
+  // modals / form state
   const [addRoleOpen, setAddRoleOpen] = useState(false);
   const [newRoleName, setNewRoleName] = useState("");
+  const [newRoleDescription, setNewRoleDescription] = useState<string | null>(null);
 
   const [editRoleOpen, setEditRoleOpen] = useState(false);
+  const [editRoleId, setEditRoleId] = useState<string | null>(null);
   const [editRoleName, setEditRoleName] = useState("");
+  const [editRoleDescription, setEditRoleDescription] = useState<string | null>(null);
 
   const [deleteRoleOpen, setDeleteRoleOpen] = useState(false);
+  const [deleteRoleId, setDeleteRoleId] = useState<string | null>(null);
 
-  const [addPrivilegeOpen, setAddPrivilegeOpen] = useState(false);
-  const [newPrivilegeName, setNewPrivilegeName] = useState("");
+  // select default role when roles load
+  useEffect(() => {
+    if (!selectedRoleId && roles.length > 0) {
+      setSelectedRoleId(roles[0].id);
+    }
+  }, [roles, selectedRoleId]);
 
-  const rolePerms = permissions[activeRole];
+  // load assigned permissions when selectedRoleId changes
+  useEffect(() => {
+    if (!selectedRoleId) {
+      setAssignedPermissionIds(new Set());
+      return;
+    }
 
-  const toggleCell = (mod: string, action: Action) => {
-    setPermissions((prev) => ({
-      ...prev,
-      [activeRole]: {
-        ...prev[activeRole],
-        [mod]: { ...prev[activeRole][mod], [action]: !prev[activeRole][mod][action] },
-      },
-    }));
-  };
-
-  const toggleRow = (mod: string, value: boolean) => {
-    setPermissions((prev) => ({
-      ...prev,
-      [activeRole]: { ...prev[activeRole], [mod]: emptyModulePerms(value) },
-    }));
-  };
-
-  const toggleColumn = (action: Action, value: boolean) => {
-    setPermissions((prev) => {
-      const nextRole: RolePermissions = {};
-      for (const mod of modules) {
-        nextRole[mod] = { ...prev[activeRole][mod], [action]: value };
+    let mounted = true;
+    (async () => {
+      setLoadingAssigned(true);
+      try {
+        const rows = await fetchRolePermissions(selectedRoleId);
+        if (!mounted) return;
+        const ids = new Set<string>((rows ?? []).map((r: any) => r.id));
+        setAssignedPermissionIds(ids);
+      } catch (err) {
+        console.error("load role permissions error", err);
+        setAssignedPermissionIds(new Set());
+      } finally {
+        if (mounted) setLoadingAssigned(false);
       }
-      return { ...prev, [activeRole]: nextRole };
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [selectedRoleId, fetchRolePermissions]);
+
+  const togglePermission = (id: string) => {
+    setAssignedPermissionIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
     });
   };
 
-  const setAll = (value: boolean) => {
-    setPermissions((prev) => {
-      const nextRole: RolePermissions = {};
-      for (const mod of modules) {
-        nextRole[mod] = emptyModulePerms(value);
+  const handleSavePermissions = async () => {
+    if (!selectedRoleId) return;
+    setSavingPermissions(true);
+    try {
+      const permissionIds = Array.from(assignedPermissionIds);
+      const res = await saveRolePermissions(selectedRoleId, permissionIds);
+      if (!res.success) {
+        console.error("save role permissions failed", res.error);
+      } else {
+        // success
       }
-      return { ...prev, [activeRole]: nextRole };
-    });
+    } catch (err) {
+      console.error("save permissions error", err);
+    } finally {
+      setSavingPermissions(false);
+    }
   };
 
-  const isRowFullyEnabled = (mod: string) => ACTIONS.every((a) => rolePerms[mod][a]);
-  const isColumnFullyEnabled = (action: Action) => modules.every((mod) => rolePerms[mod][action]);
-  const allEnabled = modules.every((mod) => isRowFullyEnabled(mod));
-
-  // --- Add Role ---
-  const handleAddRole = (e: React.FormEvent) => {
-    e.preventDefault();
-    const name = newRoleName.trim();
-    if (!name || roles.includes(name)) return;
-
-    setRoles((prev) => [...prev, name]);
-    setPermissions((prev) => ({ ...prev, [name]: buildRolePermissions(modules, true) }));
-    setActiveRole(name);
-    setNewRoleName("");
-    setAddRoleOpen(false);
-  };
-
-  // --- Edit Role (rename) ---
-  const openEditRole = () => {
-    setEditRoleName(activeRole);
+  const openEdit = (roleId: string) => {
+    const r = roles.find((x) => x.id === roleId);
+    if (!r) return;
+    setEditRoleId(roleId);
+    setEditRoleName((r as any).name ?? "");
+    setEditRoleDescription((r as any).description ?? null);
     setEditRoleOpen(true);
   };
-  const handleEditRole = (e: React.FormEvent) => {
-    e.preventDefault();
-    const name = editRoleName.trim();
-    if (!name || (name !== activeRole && roles.includes(name))) return;
 
-    setRoles((prev) => prev.map((r) => (r === activeRole ? name : r)));
-    setPermissions((prev) => {
-      const next = { ...prev };
-      next[name] = next[activeRole];
-      if (name !== activeRole) delete next[activeRole];
-      return next;
-    });
-    setActiveRole(name);
-    setEditRoleOpen(false);
+  const handleCreateRole = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newRoleName.trim()) return;
+    const res = await createRole(newRoleName.trim(), newRoleDescription ?? null);
+    if (res.success === false) {
+      console.error("createRole failed", res.error);
+    } else {
+      setAddRoleOpen(false);
+      setNewRoleName("");
+      setNewRoleDescription(null);
+      setSelectedRoleId(res.data?.id ?? null);
+    }
   };
 
-  // --- Delete Role ---
-  const handleDeleteRole = () => {
-    if (roles.length <= 1) return; // always keep at least one role
-    const nextRoles = roles.filter((r) => r !== activeRole);
-    setRoles(nextRoles);
-    setPermissions((prev) => {
-      const next = { ...prev };
-      delete next[activeRole];
-      return next;
-    });
-    setActiveRole(nextRoles[0]);
-    setDeleteRoleOpen(false);
+  const handleEditRole = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editRoleId) return;
+    const res = await updateRole(editRoleId, { name: editRoleName.trim(), description: editRoleDescription });
+    if (res.success === false) {
+      console.error("updateRole failed", res.error);
+    } else {
+      setEditRoleOpen(false);
+    }
   };
 
-  // --- Add Privilege (new module row) ---
-  const handleAddPrivilege = (e: React.FormEvent) => {
-    e.preventDefault();
-    const name = newPrivilegeName.trim();
-    if (!name || modules.includes(name)) return;
+  const confirmDelete = (roleId: string) => {
+    setDeleteRoleId(roleId);
+    setDeleteRoleOpen(true);
+  };
 
-    setModules((prev) => [...prev, name]);
-    setPermissions((prev) => {
-      const next: AllPermissions = {};
-      for (const role of roles) {
-        next[role] = { ...prev[role], [name]: emptyModulePerms(false) };
+  const handleDeleteRole = async () => {
+    if (!deleteRoleId) return;
+    const res = await deleteRole(deleteRoleId);
+    if (res.success === false) {
+      console.error("deleteRole failed", res.error);
+    } else {
+      setDeleteRoleOpen(false);
+      if (selectedRoleId === deleteRoleId) {
+        const remaining = roles.filter((r) => r.id !== deleteRoleId);
+        setSelectedRoleId(remaining.length > 0 ? remaining[0].id : null);
       }
-      return next;
-    });
-    setNewPrivilegeName("");
-    setAddPrivilegeOpen(false);
+    }
   };
+
+  const loading = rolesLoading || permsLoading || loadingAssigned;
+
+  const moduleKeys = Object.keys(permissionsByModule || {}).sort();
 
   return (
     <div className="bg-white rounded-b-xl border border-slate-200 border-t-0 p-6">
-      <h3 className="text-sm font-semibold text-slate-800 mb-1">Access &amp; Roles</h3>
-      <p className="text-xs text-slate-400 mb-4">Set exactly what each role can view, create, edit, or delete per module.</p>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-800 mb-1">Access &amp; Roles</h3>
+          <p className="text-xs text-slate-400">Set exactly what each role can view, create, edit, or delete per module.</p>
+        </div>
 
-      {/* Role tabs + Add Role */}
-      <div className="flex items-center gap-2 flex-wrap mb-4">
-        <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-          {roles.map((role) => (
+        <div className="flex items-center gap-2">
+          <button onClick={() => setAddRoleOpen(true)} className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm">
+            <Plus className="w-4 h-4" /> Add Role
+          </button>
+        </div>
+      </div>
+
+      {/* Role tabs */}
+      <div className="flex items-center gap-2 mb-4">
+        <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1 flex-wrap">
+          {roles.map((r) => (
             <button
-              key={role}
+              key={r.id}
               type="button"
-              onClick={() => setActiveRole(role)}
-              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                activeRole === role ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
-              }`}
+              onClick={() => setSelectedRoleId(r.id)}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${selectedRoleId === r.id ? "bg-white text-indigo-600 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
             >
-              {role}
+              {(r as any).name}
             </button>
           ))}
         </div>
-
-        <button
-          type="button"
-          onClick={() => setAddRoleOpen(true)}
-          className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Add Role
-        </button>
       </div>
 
-      {/* Actions on the active role */}
+      {/* Actions */}
       <div className="flex items-center gap-2 mb-5 pb-5 border-b border-slate-100">
         <span className="text-xs text-slate-400 mr-1">
-          Editing: <span className="font-semibold text-slate-600">{activeRole}</span>
+          Editing: <span className="font-semibold text-slate-600">{roles.find((x) => x.id === selectedRoleId)?.name ?? "—"}</span>
         </span>
-        <button
-          type="button"
-          onClick={openEditRole}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 transition-colors"
-        >
-          <Pencil className="w-3.5 h-3.5" />
-          Edit Role
+
+        <button disabled={!selectedRoleId} onClick={() => selectedRoleId && openEdit(selectedRoleId)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs">
+          <Pencil className="w-3.5 h-3.5" /> Edit Role
         </button>
-        <button
-          type="button"
-          onClick={() => setAddPrivilegeOpen(true)}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-indigo-600 text-white text-xs font-medium hover:bg-indigo-700 transition-colors"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          Add Privilege
-        </button>
-        <button
-          type="button"
-          onClick={() => setDeleteRoleOpen(true)}
-          disabled={roles.length <= 1}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-rose-600 text-white text-xs font-medium hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          <Trash2 className="w-3.5 h-3.5 text-white" />
-          Delete Role
+
+        <button disabled={!selectedRoleId} onClick={() => selectedRoleId && confirmDelete(selectedRoleId)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-rose-600 text-white text-xs">
+          <Trash2 className="w-3.5 h-3.5" /> Delete Role
         </button>
       </div>
 
-      {/* Enable/disable all */}
-      <div className="flex items-center gap-3 mb-4">
-        <button
-          type="button"
-          onClick={() => setAll(true)}
-          className="px-3.5 py-1.5 rounded-md border border-slate-300 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-        >
-          Enable all
-        </button>
-        <button
-          type="button"
-          onClick={() => setAll(false)}
-          className="px-3.5 py-1.5 rounded-md border border-slate-300 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-        >
-          Disable all
-        </button>
-        <span className="text-xs text-slate-400">All enabled: {allEnabled ? "Yes" : "No"}</span>
-      </div>
+      {loading ? (
+        <div className="py-8 text-center text-sm text-slate-500">Loading roles and permissions…</div>
+      ) : roles.length === 0 ? (
+        <div className="py-8 text-center text-sm text-slate-500">No roles found. Add one to get started.</div>
+      ) : moduleKeys.length === 0 ? (
+        <div className="py-8 text-center text-sm text-slate-500">No permissions available.</div>
+      ) : (
+        <>
+          <div className="space-y-6">
+            {moduleKeys.map((module) => (
+              <div key={module} className="border rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-semibold text-slate-700">{module}</h4>
+                </div>
 
-      {/* Module x Action matrix */}
-      <div className="overflow-x-auto border border-slate-200 rounded-lg">
-        <table className="w-full text-sm border-collapse">
-          <thead>
-            <tr className="border-b border-slate-200">
-              <th className="text-left font-semibold text-slate-700 px-4 py-3 min-w-[160px]">Privilege</th>
-              {ACTIONS.map((action) => (
-                <th key={action} className="px-4 py-3 text-center font-semibold text-slate-700">
-                  <div className="flex flex-col items-center gap-1.5">
-                    <span>{ACTION_LABELS[action]}</span>
-                    <input
-                      type="checkbox"
-                      checked={isColumnFullyEnabled(action)}
-                      onChange={(e) => toggleColumn(action, e.target.checked)}
-                      className="w-4 h-4 accent-indigo-600 cursor-pointer"
-                    />
-                  </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {modules.map((mod) => (
-              <tr key={mod} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50">
-                <td className="px-4 py-3">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={isRowFullyEnabled(mod)}
-                      onChange={(e) => toggleRow(mod, e.target.checked)}
-                      className="w-4 h-4 accent-indigo-600 cursor-pointer"
-                    />
-                    <span className="font-medium text-slate-800">{mod}</span>
-                  </label>
-                </td>
-                {ACTIONS.map((action) => (
-                  <td key={action} className="px-4 py-3 text-center">
-                    <input
-                      type="checkbox"
-                      checked={rolePerms[mod][action]}
-                      onChange={() => toggleCell(mod, action)}
-                      className="w-4 h-4 accent-indigo-600 cursor-pointer"
-                    />
-                  </td>
-                ))}
-              </tr>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {(permissionsByModule as any)[module].map((p: PermissionItem) => {
+                    const checked = assignedPermissionIds.has(p.id);
+                    return (
+                      <label key={p.id} className="flex items-center gap-3 p-2 border rounded hover:bg-slate-50 cursor-pointer">
+                        <input type="checkbox" checked={checked} onChange={() => togglePermission(p.id)} className="w-4 h-4 accent-indigo-600" />
+                        <div>
+                          <div className="text-sm font-medium text-slate-800">{p.permission_key}</div>
+                          {p.description && <div className="text-xs text-slate-400">{p.description}</div>}
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
             ))}
-          </tbody>
-        </table>
-      </div>
+          </div>
 
-      {/* Add Role modal */}
+          <div className="flex justify-end gap-3 mt-4">
+            <button onClick={() => { if (selectedRoleId) fetchRolePermissions(selectedRoleId).then((rows) => setAssignedPermissionIds(new Set((rows ?? []).map((r: any) => r.id)))); }} className="px-4 py-2 border rounded text-sm">Reset</button>
+
+            <button onClick={handleSavePermissions} disabled={!selectedRoleId || savingPermissions} className="px-4 py-2 bg-indigo-600 text-white rounded text-sm">
+              {savingPermissions ? "Saving..." : "Save Permissions"}
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Add Role Modal */}
       <Modal open={addRoleOpen} onClose={() => setAddRoleOpen(false)} title="Add Role">
-        <form onSubmit={handleAddRole} className="flex flex-col gap-4">
+        <form onSubmit={handleCreateRole} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-slate-500">Role Name</label>
-            <input
-              type="text"
-              value={newRoleName}
-              onChange={(e) => setNewRoleName(e.target.value)}
-              placeholder="e.g. Operations"
-              required
-              autoFocus
-              className="px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            />
-            <p className="text-xs text-slate-400 mt-1">
-              The new role starts with View-only access on every privilege.
-            </p>
+            <input value={newRoleName} onChange={(e) => setNewRoleName(e.target.value)} required className="px-3 py-2 rounded-lg border" />
+            <label className="text-xs font-medium text-slate-500 mt-2">Description (optional)</label>
+            <input value={newRoleDescription ?? ""} onChange={(e) => setNewRoleDescription(e.target.value || null)} className="px-3 py-2 rounded-lg border" />
           </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => setAddRoleOpen(false)}
-              className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button type="submit" className="px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors">
-              Add Role
-            </button>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setAddRoleOpen(false)} className="px-4 py-2 border rounded">Cancel</button>
+            <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded">Add Role</button>
           </div>
         </form>
       </Modal>
 
-      {/* Edit Role modal */}
+      {/* Edit Role Modal */}
       <Modal open={editRoleOpen} onClose={() => setEditRoleOpen(false)} title="Edit Role">
         <form onSubmit={handleEditRole} className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1">
+          <div>
             <label className="text-xs font-medium text-slate-500">Role Name</label>
-            <input
-              type="text"
-              value={editRoleName}
-              onChange={(e) => setEditRoleName(e.target.value)}
-              required
-              autoFocus
-              className="px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            />
-            <p className="text-xs text-slate-400 mt-1">Renaming keeps all existing permissions for this role.</p>
+            <input value={editRoleName} onChange={(e) => setEditRoleName(e.target.value)} required className="px-3 py-2 rounded-lg border" />
+            <label className="text-xs font-medium text-slate-500 mt-2">Description (optional)</label>
+            <input value={editRoleDescription ?? ""} onChange={(e) => setEditRoleDescription(e.target.value || null)} className="px-3 py-2 rounded-lg border" />
           </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => setEditRoleOpen(false)}
-              className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button type="submit" className="px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors">
-              Save Changes
-            </button>
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setEditRoleOpen(false)} className="px-4 py-2 border rounded">Cancel</button>
+            <button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded">Save Changes</button>
           </div>
         </form>
       </Modal>
 
-      {/* Delete Role confirmation */}
+      {/* Delete Role Confirm */}
       <Modal open={deleteRoleOpen} onClose={() => setDeleteRoleOpen(false)} title="Delete Role">
         <div className="flex flex-col gap-4">
-          <p className="text-sm text-slate-600">
-            Are you sure you want to delete the <span className="font-semibold text-slate-800">{activeRole}</span> role?
-            This removes its entire permission set and can&apos;t be undone.
-          </p>
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => setDeleteRoleOpen(false)}
-              className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleDeleteRole}
-              className="px-5 py-2 rounded-lg bg-rose-600 text-white text-sm font-medium hover:bg-rose-700 transition-colors"
-            >
-              Delete Role
-            </button>
+          <p>Are you sure you want to delete this role? This removes its permissions and cannot be undone.</p>
+          <div className="flex justify-end gap-2">
+            <button onClick={() => setDeleteRoleOpen(false)} className="px-4 py-2 border rounded">Cancel</button>
+            <button onClick={handleDeleteRole} className="px-4 py-2 bg-rose-600 text-white rounded">Delete Role</button>
           </div>
         </div>
-      </Modal>
-
-      {/* Add Privilege modal */}
-      <Modal open={addPrivilegeOpen} onClose={() => setAddPrivilegeOpen(false)} title="Add Privilege">
-        <form onSubmit={handleAddPrivilege} className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-slate-500">Privilege / Module Name</label>
-            <input
-              type="text"
-              value={newPrivilegeName}
-              onChange={(e) => setNewPrivilegeName(e.target.value)}
-              placeholder="e.g. Payroll"
-              required
-              autoFocus
-              className="px-3 py-2 rounded-lg border border-slate-300 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
-            />
-            <p className="text-xs text-slate-400 mt-1">
-              Adds a new row to the matrix for every role, starting fully unchecked.
-            </p>
-          </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => setAddPrivilegeOpen(false)}
-              className="px-4 py-2 rounded-lg border border-slate-300 text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors"
-            >
-              Cancel
-            </button>
-            <button type="submit" className="px-5 py-2 rounded-lg bg-indigo-600 text-white text-sm font-medium hover:bg-indigo-700 transition-colors">
-              Add Privilege
-            </button>
-          </div>
-        </form>
       </Modal>
     </div>
   );
