@@ -8,7 +8,6 @@ import {
   createRole as createRoleAction,
   updateRole as updateRoleAction,
   deleteRole as deleteRoleAction,
-  getPermissions as getPermissionsAction,
 } from "@/lib/actions/roles-actions";
 
 import type { Role } from "@/lib/types";

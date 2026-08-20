@@ -1,4 +1,34 @@
 
+/* -------------------------------------------------------------------------- */
+/* Roles & Permissions                                                        */
+/* -------------------------------------------------------------------------- */
+
+export type RoleStatus = "active" | "inactive";
+
+export type Role = {
+  id: string;
+  company_id: string;
+  name: string;
+  description: string | null;
+  status: RoleStatus;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type Permission = {
+  id: string;
+  permission_key: string;
+  module: string;
+  action: string;
+  description: string | null;
+  created_at?: string;
+};
+
+export type RolePermission = {
+  role_id: string;
+  permission_id: string;
+};
 // Product
 
 export type ProductType = "Business" | "Education" | "Hospital";
@@ -154,9 +184,7 @@ export type Department = {
   updatedAt: string;
 };
 
-////////////////////////////////////////////////////////////
 // Branches
-////////////////////////////////////////////////////////////
 
 export type BranchStatus =
   | "Active"
@@ -217,9 +245,10 @@ export type AuthenticatedUser = {
 // Tenant Context
 
 export type UserTenantContext = {
+  [x: string]: string;
   userId: string;
   role: SystemRole;
-  companyId: string | null;
+  companyId: string;
 };
 
 
@@ -290,7 +319,7 @@ export type CompanyUserEmployee = {
   middleName: string | null;
   lastName: string;
 
-  email: string;
+  email: string | null;
   phone: string | null;
 
   departmentId: string | null;

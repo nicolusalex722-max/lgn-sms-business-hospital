@@ -1,12 +1,13 @@
 "use server";
 
-import {
-  createSupabaseServerClient,
-} from "@/lib/db/server";
+import { createSupabaseServerClient } from "@/lib/db/server";
+
+import { requireUserTenantContext } from "@/lib/auth";
 
 import {
-  requireCurrentUser,
-} from "@/lib/auth";
+  requireCompanyContext,
+  requirePermission,
+} from "@/lib/auth/authorization";
 
 import {
   employeeCreateSchema,
@@ -18,11 +19,12 @@ import {
 import type {
   Employee,
   EmployeeStatus,
+  UserTenantContext,
 } from "@/lib/types";
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* Database Types                                                             */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 type EmployeeDbStatus =
   | "active"
@@ -31,42 +33,30 @@ type EmployeeDbStatus =
 
 type EmployeeRow = {
   id: string;
-
   company_id: string;
-
   employee_number: string;
-
   first_name: string;
   middle_name: string | null;
   last_name: string;
-
   email: string | null;
   phone: string | null;
-
   department_id: string | null;
   branch_id: string | null;
-
   position: string;
-
-  salary: number | string | null;
-
+  salary: number | null;
   birthdate: string | null;
-
   next_of_kin_name: string | null;
   next_of_kin_phone: string | null;
-
   guarantor_name: string | null;
   guarantor_phone: string | null;
-
   status: EmployeeDbStatus;
-
   created_at: string;
   updated_at: string;
 };
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* Action Result                                                              */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 export type EmployeeActionResult<T = null> = {
   success: boolean;
@@ -74,78 +64,74 @@ export type EmployeeActionResult<T = null> = {
   error?: string;
 };
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* Shared Select                                                              */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 const EMPLOYEE_SELECT = `
   id,
   company_id,
   employee_number,
-
   first_name,
   middle_name,
   last_name,
-
   email,
   phone,
-
   department_id,
   branch_id,
-
   position,
   salary,
   birthdate,
-
   next_of_kin_name,
   next_of_kin_phone,
-
   guarantor_name,
   guarantor_phone,
-
   status,
-
   created_at,
   updated_at
 `;
 
-/* -------------------------------------------------------------------------- */
-/* Authorization                                                             */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
+/* Authorization Context                                                      */
+/* ========================================================================== */
 
 /**
- * Employees belong to a company.
+ * Resolves the authorization context required by employee actions.
  *
- * CompanyAdmin can manage employees belonging
- * only to their own company.
+ * Flow:
  *
- * SuperAdmin is not allowed through this helper
- * because employee management is tenant-level.
+ * authenticated Supabase user
+ *          ↓
+ * UserTenantContext
+ *          ↓
+ * company context
+ *
+ * IMPORTANT:
+ *
+ * companyId is NEVER accepted from the client.
+ *
+ * The company is always resolved from the authenticated user's
+ * authorization context.
  */
-async function requireEmployeeManagementAccess() {
-  const currentUser =
-    await requireCurrentUser();
+async function requireEmployeeContext(): Promise<{
+  context: UserTenantContext;
+  companyId: string;
+}> {
+  const context =
+    await requireUserTenantContext();
 
-  if (
-    currentUser.role !== "CompanyAdmin"
-  ) {
-    throw new Error(
-      "You are not authorized to manage employees.",
-    );
-  }
+  const companyId =
+    requireCompanyContext(context);
 
-  if (!currentUser.companyId) {
-    throw new Error(
-      "Your account is not associated with a company.",
-    );
-  }
-
-  return currentUser;
+  return {
+    context,
+    companyId,
+  };
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* Mapping Helpers                                                            */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 function mapEmployeeStatus(
   status: EmployeeDbStatus,
@@ -162,9 +148,9 @@ function mapEmployeeStatus(
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* Map Employee                                                              */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
+/* Map Database Row → Application Employee                                    */
+/* ========================================================================== */
 
 function mapEmployee(
   row: EmployeeRow,
@@ -172,7 +158,8 @@ function mapEmployee(
   return {
     id: row.id,
 
-    companyId: row.company_id,
+    companyId:
+      row.company_id,
 
     employeeNumber:
       row.employee_number,
@@ -202,9 +189,7 @@ function mapEmployee(
       row.position,
 
     salary:
-      row.salary === null
-        ? null
-        : Number(row.salary),
+      row.salary,
 
     birthdate:
       row.birthdate,
@@ -222,7 +207,9 @@ function mapEmployee(
       row.guarantor_phone,
 
     status:
-      mapEmployeeStatus(row.status),
+      mapEmployeeStatus(
+        row.status,
+      ),
 
     createdAt:
       row.created_at,
@@ -232,16 +219,51 @@ function mapEmployee(
   };
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* GET ALL EMPLOYEES                                                          */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
+/**
+ * Returns employees belonging only to the authenticated user's company.
+ *
+ * Required permission:
+ *
+ * employees.view
+ *
+ * Tenant isolation:
+ *
+ * authenticated user
+ *       ↓
+ * company context
+ *       ↓
+ * .eq("company_id", companyId)
+ */
 export async function getEmployees(): Promise<
   EmployeeActionResult<Employee[]>
 > {
   try {
-    const currentUser =
-      await requireEmployeeManagementAccess();
+    /* ---------------------------------------------------------------------- */
+    /* Authentication + Company Context                                      */
+    /* ---------------------------------------------------------------------- */
+
+    const {
+      context,
+      companyId,
+    } =
+      await requireEmployeeContext();
+
+    /* ---------------------------------------------------------------------- */
+    /* Authorization                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    await requirePermission(
+      context,
+      "employees.view",
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* Database                                                               */
+    /* ---------------------------------------------------------------------- */
 
     const supabase =
       await createSupabaseServerClient();
@@ -252,10 +274,7 @@ export async function getEmployees(): Promise<
     } = await supabase
       .from("employees")
       .select(EMPLOYEE_SELECT)
-      .eq(
-        "company_id",
-        currentUser.companyId,
-      )
+      .eq("company_id", companyId)
       .order("created_at", {
         ascending: false,
       });
@@ -289,19 +308,42 @@ export async function getEmployees(): Promise<
     return {
       success: false,
       error:
-        "Something went wrong while fetching employees.",
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while fetching employees.",
     };
   }
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* GET EMPLOYEE BY ID                                                         */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
+/**
+ * Fetches a single employee belonging to the authenticated user's company.
+ *
+ * Required permission:
+ *
+ * employees.view
+ *
+ * IMPORTANT:
+ *
+ * The employee ID alone is NOT sufficient.
+ *
+ * The query also checks company_id.
+ *
+ * This prevents cross-company access.
+ */
 export async function getEmployeeById(
   id: string,
-): Promise<EmployeeActionResult<Employee>> {
+): Promise<
+  EmployeeActionResult<Employee>
+> {
   try {
+    /* ---------------------------------------------------------------------- */
+    /* Validate ID                                                            */
+    /* ---------------------------------------------------------------------- */
+
     if (!id?.trim()) {
       return {
         success: false,
@@ -310,8 +352,28 @@ export async function getEmployeeById(
       };
     }
 
-    const currentUser =
-      await requireEmployeeManagementAccess();
+    /* ---------------------------------------------------------------------- */
+    /* Authentication + Company Context                                      */
+    /* ---------------------------------------------------------------------- */
+
+    const {
+      context,
+      companyId,
+    } =
+      await requireEmployeeContext();
+
+    /* ---------------------------------------------------------------------- */
+    /* Authorization                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    await requirePermission(
+      context,
+      "employees.view",
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* Database                                                               */
+    /* ---------------------------------------------------------------------- */
 
     const supabase =
       await createSupabaseServerClient();
@@ -323,10 +385,7 @@ export async function getEmployeeById(
       .from("employees")
       .select(EMPLOYEE_SELECT)
       .eq("id", id)
-      .eq(
-        "company_id",
-        currentUser.companyId,
-      )
+      .eq("company_id", companyId)
       .maybeSingle();
 
     if (error) {
@@ -365,36 +424,78 @@ export async function getEmployeeById(
     return {
       success: false,
       error:
-        "Something went wrong while fetching the employee.",
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while fetching the employee.",
     };
   }
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* CREATE EMPLOYEE                                                            */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
+/**
+ * Creates an employee for the authenticated user's company.
+ *
+ * Required permission:
+ *
+ * employees.create
+ *
+ * IMPORTANT:
+ *
+ * company_id is NEVER accepted from the client.
+ */
 export async function createEmployee(
   input: EmployeeCreateInput,
-): Promise<EmployeeActionResult<Employee>> {
+): Promise<
+  EmployeeActionResult<Employee>
+> {
   try {
-    const currentUser =
-      await requireEmployeeManagementAccess();
+    /* ---------------------------------------------------------------------- */
+    /* Authentication + Company Context                                      */
+    /* ---------------------------------------------------------------------- */
+
+    const {
+      context,
+      companyId,
+    } =
+      await requireEmployeeContext();
+
+    /* ---------------------------------------------------------------------- */
+    /* Authorization                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    await requirePermission(
+      context,
+      "employees.create",
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* Validation                                                             */
+    /* ---------------------------------------------------------------------- */
 
     const validation =
-      employeeCreateSchema.safeParse(input);
+      employeeCreateSchema.safeParse(
+        input,
+      );
 
     if (!validation.success) {
       return {
         success: false,
         error:
-          validation.error.issues[0]?.message ??
+          validation.error.issues[0]
+            ?.message ??
           "Invalid employee data.",
       };
     }
 
     const values =
       validation.data;
+
+    /* ---------------------------------------------------------------------- */
+    /* Database                                                               */
+    /* ---------------------------------------------------------------------- */
 
     const supabase =
       await createSupabaseServerClient();
@@ -405,8 +506,7 @@ export async function createEmployee(
     } = await supabase
       .from("employees")
       .insert({
-        company_id:
-          currentUser.companyId,
+        company_id: companyId,
 
         employee_number:
           values.employeeNumber,
@@ -453,8 +553,7 @@ export async function createEmployee(
         guarantor_phone:
           values.guarantorPhone || null,
 
-        status:
-          "active",
+        status: "active",
       })
       .select(EMPLOYEE_SELECT)
       .single();
@@ -465,11 +564,27 @@ export async function createEmployee(
         error,
       );
 
+      /* -------------------------------------------------------------------- */
+      /* PostgreSQL Unique Violation                                          */
+      /* -------------------------------------------------------------------- */
+
       if (error.code === "23505") {
         return {
           success: false,
           error:
-            "An employee with this employee number already exists.",
+            "An employee with this employee number already exists in your company.",
+        };
+      }
+
+      /* -------------------------------------------------------------------- */
+      /* Foreign Key Violation                                                */
+      /* -------------------------------------------------------------------- */
+
+      if (error.code === "23503") {
+        return {
+          success: false,
+          error:
+            "The selected department or branch does not exist.",
         };
       }
 
@@ -495,20 +610,37 @@ export async function createEmployee(
     return {
       success: false,
       error:
-        "Something went wrong while creating the employee.",
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while creating the employee.",
     };
   }
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* UPDATE EMPLOYEE                                                            */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
+/**
+ * Updates an employee belonging only to the authenticated user's company.
+ *
+ * Required permission:
+ *
+ * employees.update
+ *
+ * company_id cannot be changed through this action.
+ */
 export async function updateEmployee(
   id: string,
   input: EmployeeUpdateInput,
-): Promise<EmployeeActionResult<Employee>> {
+): Promise<
+  EmployeeActionResult<Employee>
+> {
   try {
+    /* ---------------------------------------------------------------------- */
+    /* Validate ID                                                            */
+    /* ---------------------------------------------------------------------- */
+
     if (!id?.trim()) {
       return {
         success: false,
@@ -517,23 +649,50 @@ export async function updateEmployee(
       };
     }
 
-    const currentUser =
-      await requireEmployeeManagementAccess();
+    /* ---------------------------------------------------------------------- */
+    /* Authentication + Company Context                                      */
+    /* ---------------------------------------------------------------------- */
+
+    const {
+      context,
+      companyId,
+    } =
+      await requireEmployeeContext();
+
+    /* ---------------------------------------------------------------------- */
+    /* Authorization                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    await requirePermission(
+      context,
+      "employees.update",
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* Validation                                                             */
+    /* ---------------------------------------------------------------------- */
 
     const validation =
-      employeeUpdateSchema.safeParse(input);
+      employeeUpdateSchema.safeParse(
+        input,
+      );
 
     if (!validation.success) {
       return {
         success: false,
         error:
-          validation.error.issues[0]?.message ??
+          validation.error.issues[0]
+            ?.message ??
           "Invalid employee data.",
       };
     }
 
     const values =
       validation.data;
+
+    /* ---------------------------------------------------------------------- */
+    /* Database                                                               */
+    /* ---------------------------------------------------------------------- */
 
     const supabase =
       await createSupabaseServerClient();
@@ -597,10 +756,7 @@ export async function updateEmployee(
               : "suspended",
       })
       .eq("id", id)
-      .eq(
-        "company_id",
-        currentUser.companyId,
-      )
+      .eq("company_id", companyId)
       .select(EMPLOYEE_SELECT)
       .maybeSingle();
 
@@ -610,11 +766,27 @@ export async function updateEmployee(
         error,
       );
 
+      /* -------------------------------------------------------------------- */
+      /* PostgreSQL Unique Violation                                          */
+      /* -------------------------------------------------------------------- */
+
       if (error.code === "23505") {
         return {
           success: false,
           error:
-            "An employee with this employee number already exists.",
+            "An employee with this employee number already exists in your company.",
+        };
+      }
+
+      /* -------------------------------------------------------------------- */
+      /* Foreign Key Violation                                                */
+      /* -------------------------------------------------------------------- */
+
+      if (error.code === "23503") {
+        return {
+          success: false,
+          error:
+            "The selected department or branch does not exist.",
         };
       }
 
@@ -648,19 +820,32 @@ export async function updateEmployee(
     return {
       success: false,
       error:
-        "Something went wrong while updating the employee.",
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while updating the employee.",
     };
   }
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* DELETE EMPLOYEE                                                            */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
+/**
+ * Deletes an employee belonging only to the authenticated user's company.
+ *
+ * Required permission:
+ *
+ * employees.delete
+ */
 export async function deleteEmployee(
   id: string,
 ): Promise<EmployeeActionResult> {
   try {
+    /* ---------------------------------------------------------------------- */
+    /* Validate ID                                                            */
+    /* ---------------------------------------------------------------------- */
+
     if (!id?.trim()) {
       return {
         success: false,
@@ -669,18 +854,32 @@ export async function deleteEmployee(
       };
     }
 
-    const currentUser =
-      await requireEmployeeManagementAccess();
+    /* ---------------------------------------------------------------------- */
+    /* Authentication + Company Context                                      */
+    /* ---------------------------------------------------------------------- */
+
+    const {
+      context,
+      companyId,
+    } =
+      await requireEmployeeContext();
+
+    /* ---------------------------------------------------------------------- */
+    /* Authorization                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    await requirePermission(
+      context,
+      "employees.delete",
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* Database                                                               */
+    /* ---------------------------------------------------------------------- */
 
     const supabase =
       await createSupabaseServerClient();
 
-    /*
-     * We deliberately check company_id here.
-     *
-     * This prevents CompanyAdmin A from deleting
-     * an employee belonging to Company B.
-     */
     const {
       data,
       error,
@@ -688,10 +887,7 @@ export async function deleteEmployee(
       .from("employees")
       .delete()
       .eq("id", id)
-      .eq(
-        "company_id",
-        currentUser.companyId,
-      )
+      .eq("company_id", companyId)
       .select("id")
       .maybeSingle();
 
@@ -728,7 +924,195 @@ export async function deleteEmployee(
     return {
       success: false,
       error:
-        "Something went wrong while deleting the employee.",
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while deleting the employee.",
+    };
+  }
+}
+
+/* ========================================================================== */
+/* TOGGLE EMPLOYEE STATUS                                                     */
+/* ========================================================================== */
+
+/**
+ * Toggles an employee between active and inactive.
+ *
+ * IMPORTANT:
+ *
+ * Because employees can also have the "suspended" state,
+ * this function only toggles:
+ *
+ * active → inactive
+ * inactive → active
+ *
+ * A suspended employee remains suspended.
+ *
+ * Required permission:
+ *
+ * employees.update
+ */
+export async function toggleEmployeeStatus(
+  id: string,
+): Promise<
+  EmployeeActionResult<Employee>
+> {
+  try {
+    /* ---------------------------------------------------------------------- */
+    /* Validate ID                                                            */
+    /* ---------------------------------------------------------------------- */
+
+    if (!id?.trim()) {
+      return {
+        success: false,
+        error:
+          "Employee ID is required.",
+      };
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Authentication + Company Context                                      */
+    /* ---------------------------------------------------------------------- */
+
+    const {
+      context,
+      companyId,
+    } =
+      await requireEmployeeContext();
+
+    /* ---------------------------------------------------------------------- */
+    /* Authorization                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    await requirePermission(
+      context,
+      "employees.update",
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* Database                                                               */
+    /* ---------------------------------------------------------------------- */
+
+    const supabase =
+      await createSupabaseServerClient();
+
+    /* ---------------------------------------------------------------------- */
+    /* Fetch Current Status                                                   */
+    /* ---------------------------------------------------------------------- */
+
+    const {
+      data: employee,
+      error: fetchError,
+    } = await supabase
+      .from("employees")
+      .select(`
+        id,
+        company_id,
+        status
+      `)
+      .eq("id", id)
+      .eq("company_id", companyId)
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error(
+        "toggleEmployeeStatus fetch error:",
+        fetchError,
+      );
+
+      return {
+        success: false,
+        error:
+          "Failed to fetch employee.",
+      };
+    }
+
+    if (!employee) {
+      return {
+        success: false,
+        error:
+          "Employee not found.",
+      };
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Suspended Employee                                                     */
+    /* ---------------------------------------------------------------------- */
+
+    /**
+     * Do not automatically change a suspended employee.
+     *
+     * Suspension is a deliberate state and should be
+     * handled explicitly through updateEmployee().
+     */
+    if (
+      employee.status ===
+      "suspended"
+    ) {
+      return {
+        success: false,
+        error:
+          "Suspended employees must be updated explicitly.",
+      };
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Calculate Next Status                                                  */
+    /* ---------------------------------------------------------------------- */
+
+    const nextStatus =
+      employee.status === "active"
+        ? "inactive"
+        : "active";
+
+    /* ---------------------------------------------------------------------- */
+    /* Update Status                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    const {
+      data,
+      error,
+    } = await supabase
+      .from("employees")
+      .update({
+        status: nextStatus,
+      })
+      .eq("id", id)
+      .eq("company_id", companyId)
+      .select(EMPLOYEE_SELECT)
+      .single();
+
+    if (error) {
+      console.error(
+        "toggleEmployeeStatus update error:",
+        error,
+      );
+
+      return {
+        success: false,
+        error:
+          "Failed to update employee status.",
+      };
+    }
+
+    return {
+      success: true,
+      data: mapEmployee(
+        data as unknown as EmployeeRow,
+      ),
+    };
+  } catch (error) {
+    console.error(
+      "toggleEmployeeStatus unexpected error:",
+      error,
+    );
+
+    return {
+      success: false,
+      error:
+        error instanceof Error
+          ? error.message
+          : "Something went wrong while changing the employee status.",
     };
   }
 }

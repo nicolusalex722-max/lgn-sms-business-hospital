@@ -117,6 +117,13 @@ export async function requirePermission(
     return { companyUserId: context.userId, companyId: context.companyId };
   }
 
+  // CompanyAdmin (tenant administrator) bypass: CompanyAdmins have complete
+  // control over their company tenant, so we allow them to pass the permission
+  // check as well, while maintaining company context validation.
+  if (context.role === "CompanyAdmin") {
+    return { companyUserId: context.userId, companyId: context.companyId };
+  }
+
   // For non-superadmin users a company context is required. Narrow the type
   // systemically by throwing if companyId is missing — after this check
   // TypeScript understands context.companyId is a string.

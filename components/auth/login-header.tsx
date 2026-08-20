@@ -1,43 +1,46 @@
-"use client";
 
 import Image from "next/image";
-
 import { ShieldCheck } from "lucide-react";
 
 export default function LoginHeader() {
   return (
-    <div className="flex flex-col items-center text-center">
-      {/* Tanzania Emblem */}
+    <header className="flex flex-col items-center text-center">
+      {/* Logo */}
       <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-white shadow-lg ring-4 ring-emerald-100">
         <Image
           src="/lgn1-logo.png"
-          alt="lgn"
-          width={72}
-          height={72}
-          sizes="20"
+          alt="LGN logo"
+          width={77}
+          height={77}
+          sizes="70px"
           priority
-          className="object-contain"
+          className="h-auto w-auto object-contain"
         />
       </div>
-      {/* System Name */}
+
+      {/* System Information */}
       <div className="mt-6 space-y-2">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
           LGN
         </h1>
 
         <p className="text-sm font-medium text-emerald-700">
-          Provide Email & Password
+          Provide your email and password
         </p>
       </div>
 
       {/* Security Badge */}
       <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-4 py-2">
-        <ShieldCheck className="h-4 w-4 text-emerald-700" />
+        <ShieldCheck
+          aria-hidden="true"
+          className="h-4 w-4 text-emerald-700"
+        />
 
         <span className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-          Sign-in
+          Secure Sign-in
         </span>
       </div>
-    </div>
+    </header>
   );
 }
+

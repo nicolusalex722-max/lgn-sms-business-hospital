@@ -7,6 +7,9 @@ export async function GET() {
     return NextResponse.json({ ok: true, data: permissions });
   } catch (err: any) {
     console.error("GET /api/permissions error:", err);
-    return NextResponse.json({ ok: false, error: err?.message ?? "Failed" }, { status: 500 });
+    return NextResponse.json(
+      { ok: false, error: err?.message ?? "Failed" },
+      { status: 500 },
+    );
   }
 }

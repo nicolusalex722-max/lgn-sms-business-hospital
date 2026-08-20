@@ -2,13 +2,20 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import {
+  getPermissions,
+  getRolePermissions,
+  updateRolePermissions,
+} from "@/lib/actions/roles-actions";
+
 import type { Permission } from "@/lib/types";
 
 type PermissionsByModule = Record<string, Permission[]>;
 
 export function useRolePermissions() {
   const [permissions, setPermissions] = useState<Permission[]>([]);
-  const [permissionsByModule, setPermissionsByModule] = useState<PermissionsByModule>({});
+  const [permissionsByModule, setPermissionsByModule] =
+    useState<PermissionsByModule>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,53 +24,103 @@ export function useRolePermissions() {
       setLoading(true);
       setError(null);
 
-      const mod: any = await import("@/lib/actions/roles-actions");
-      const rows = await mod.getPermissions();
-      setPermissions(rows as any[]);
+      const rows = await getPermissions();
 
-      // Group by module
+      setPermissions(rows);
+
       const groups: PermissionsByModule = {};
-      for (const p of rows as any[]) {
-        const module = p.module || "General";
-        if (!groups[module]) groups[module] = [];
-        groups[module].push(p as any);
+
+      for (const permission of rows) {
+        const module = permission.module || "General";
+
+        if (!groups[module]) {
+          groups[module] = [];
+        }
+
+        groups[module].push(permission);
       }
 
       setPermissionsByModule(groups);
-    } catch (err: any) {
-      console.error("useRolePermissions fetchPermissions error:", err);
-      setError(err?.message ?? "Failed to fetch permissions.");
+    } catch (err: unknown) {
+      console.error(
+        "useRolePermissions fetchPermissions error:",
+        err,
+      );
+
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Failed to fetch permissions.";
+
+      setError(message);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  const fetchRolePermissions = useCallback(async (roleId: string) => {
-    try {
-      setError(null);
-      const mod: any = await import("@/lib/actions/roles-actions");
-      const rows = await mod.getRolePermissions(roleId);
-      return rows as any[];
-    } catch (err: any) {
-      console.error("useRolePermissions fetchRolePermissions error:", err);
-      setError(err?.message ?? "Failed to fetch role permissions.");
-      return [];
-    }
-  }, []);
+  const fetchRolePermissions = useCallback(
+    async (roleId: string) => {
+      try {
+        setError(null);
 
-  const saveRolePermissions = useCallback(async (roleId: string, permissionIds: string[]) => {
-    try {
-      setError(null);
-      const mod: any = await import("@/lib/actions/roles-actions");
-      const res = await mod.updateRolePermissions(roleId, permissionIds);
-      return { success: true, data: res };
-    } catch (err: any) {
-      console.error("useRolePermissions saveRolePermissions error:", err);
-      const message = err?.message ?? "Failed to save role permissions.";
-      setError(message);
-      return { success: false, error: message };
-    }
-  }, []);
+        return await getRolePermissions(roleId);
+      } catch (err: unknown) {
+        console.error(
+          "useRolePermissions fetchRolePermissions error:",
+          err,
+        );
+
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Failed to fetch role permissions.";
+
+        setError(message);
+
+        return [];
+      }
+    },
+    [],
+  );
+
+  const saveRolePermissions = useCallback(
+    async (
+      roleId: string,
+      permissionIds: string[],
+    ) => {
+      try {
+        setError(null);
+
+        const data = await updateRolePermissions(
+          roleId,
+          permissionIds,
+        );
+
+        return {
+          success: true,
+          data,
+        };
+      } catch (err: unknown) {
+        console.error(
+          "useRolePermissions saveRolePermissions error:",
+          err,
+        );
+
+        const message =
+          err instanceof Error
+            ? err.message
+            : "Failed to save role permissions.";
+
+        setError(message);
+
+        return {
+          success: false,
+          error: message,
+        };
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     fetchPermissions();
@@ -74,7 +131,6 @@ export function useRolePermissions() {
     permissionsByModule,
     loading,
     error,
-
     fetchPermissions,
     fetchRolePermissions,
     saveRolePermissions,

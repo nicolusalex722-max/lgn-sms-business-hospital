@@ -1,12 +1,13 @@
 "use server";
 
-import {
-  createSupabaseServerClient,
-} from "@/lib/db/server";
+import { createSupabaseServerClient } from "@/lib/db/server";
+
+import { requireUserTenantContext } from "@/lib/auth";
 
 import {
-  requireCurrentUser,
-} from "@/lib/auth";
+  requireCompanyContext,
+  requirePermission,
+} from "@/lib/auth/authorization";
 
 import {
   branchCreateSchema,
@@ -18,16 +19,16 @@ import {
 import type {
   Branch,
   BranchStatus,
+  UserTenantContext,
 } from "@/lib/types";
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* Database Types                                                             */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 type BranchDbStatus =
   | "active"
   | "inactive";
-
 
 type BranchRow = {
   id: string;
@@ -40,10 +41,9 @@ type BranchRow = {
   updated_at: string;
 };
 
-
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* Action Result                                                              */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 export type BranchActionResult<T = null> = {
   success: boolean;
@@ -51,10 +51,9 @@ export type BranchActionResult<T = null> = {
   error?: string;
 };
 
-
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* Shared Select                                                              */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 const BRANCH_SELECT = `
   id,
@@ -67,56 +66,47 @@ const BRANCH_SELECT = `
   updated_at
 `;
 
-
-/* -------------------------------------------------------------------------- */
-/* Authorization                                                              */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
+/* Authorization Context                                                      */
+/* ========================================================================== */
 
 /**
- * Ensures that the authenticated user:
+ * Resolves the authorization context required by branch actions.
  *
- * 1. Is logged in.
- * 2. Is a CompanyAdmin.
- * 3. Belongs to a company.
+ * Flow:
  *
- * The company ID is obtained from the authenticated
- * user's authorization context.
+ * authenticated Supabase user
+ *          ↓
+ * UserTenantContext
+ *          ↓
+ * company context
  *
- * It is NEVER supplied by the client.
+ * IMPORTANT:
+ *
+ * companyId is NEVER accepted from the client.
+ *
+ * The company is always resolved from the authenticated user's
+ * authorization context.
  */
-async function requireCompanyAdminAccess(): Promise<{
-  userId: string;
+async function requireBranchContext(): Promise<{
+  context: UserTenantContext;
   companyId: string;
 }> {
-  const currentUser =
-    await requireCurrentUser();
+  const context =
+    await requireUserTenantContext();
 
-  if (
-    currentUser.role !==
-    "CompanyAdmin"
-  ) {
-    throw new Error(
-      "Only CompanyAdmin users can manage branches.",
-    );
-  }
-
-  if (!currentUser.companyId) {
-    throw new Error(
-      "Authenticated CompanyAdmin is not associated with a company.",
-    );
-  }
+  const companyId =
+    requireCompanyContext(context);
 
   return {
-    userId: currentUser.id,
-    companyId:
-      currentUser.companyId,
+    context,
+    companyId,
   };
 }
 
-
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* Mapping Helpers                                                            */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 function mapBranchStatus(
   status: BranchDbStatus,
@@ -130,10 +120,9 @@ function mapBranchStatus(
   }
 }
 
-
-/* -------------------------------------------------------------------------- */
-/* Map Branch                                                                */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
+/* Map Database Row → Application Branch                                      */
+/* ========================================================================== */
 
 function mapBranch(
   row: BranchRow,
@@ -166,23 +155,51 @@ function mapBranch(
   };
 }
 
-
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* GET ALL BRANCHES                                                           */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 /**
- * Returns ONLY branches belonging to the authenticated
- * CompanyAdmin's company.
+ * Returns branches belonging only to the authenticated user's company.
+ *
+ * Required permission:
+ *
+ * branches.view
+ *
+ * Tenant isolation:
+ *
+ * authenticated user
+ *       ↓
+ * company context
+ *       ↓
+ * .eq("company_id", companyId)
  */
 export async function getBranches(): Promise<
   BranchActionResult<Branch[]>
 > {
   try {
+    /* ---------------------------------------------------------------------- */
+    /* Authentication + Company Context                                      */
+    /* ---------------------------------------------------------------------- */
+
     const {
+      context,
       companyId,
     } =
-      await requireCompanyAdminAccess();
+      await requireBranchContext();
+
+    /* ---------------------------------------------------------------------- */
+    /* Authorization                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    await requirePermission(
+      context,
+      "branches.view",
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* Database                                                               */
+    /* ---------------------------------------------------------------------- */
 
     const supabase =
       await createSupabaseServerClient();
@@ -246,16 +263,24 @@ export async function getBranches(): Promise<
   }
 }
 
-
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* GET BRANCH BY ID                                                           */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 /**
- * Fetches one branch.
+ * Fetches a single branch belonging to the authenticated user's company.
  *
- * The company filter is mandatory so that a CompanyAdmin
- * cannot access another company's branch by UUID.
+ * Required permission:
+ *
+ * branches.view
+ *
+ * IMPORTANT:
+ *
+ * The branch ID alone is NOT sufficient.
+ *
+ * The query also checks company_id.
+ *
+ * This prevents cross-company access.
  */
 export async function getBranchById(
   id: string,
@@ -263,6 +288,10 @@ export async function getBranchById(
   BranchActionResult<Branch>
 > {
   try {
+    /* ---------------------------------------------------------------------- */
+    /* Validate ID                                                            */
+    /* ---------------------------------------------------------------------- */
+
     if (!id?.trim()) {
       return {
         success: false,
@@ -271,10 +300,28 @@ export async function getBranchById(
       };
     }
 
+    /* ---------------------------------------------------------------------- */
+    /* Authentication + Company Context                                      */
+    /* ---------------------------------------------------------------------- */
+
     const {
+      context,
       companyId,
     } =
-      await requireCompanyAdminAccess();
+      await requireBranchContext();
+
+    /* ---------------------------------------------------------------------- */
+    /* Authorization                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    await requirePermission(
+      context,
+      "branches.view",
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* Database                                                               */
+    /* ---------------------------------------------------------------------- */
 
     const supabase =
       await createSupabaseServerClient();
@@ -341,16 +388,20 @@ export async function getBranchById(
   }
 }
 
-
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* CREATE BRANCH                                                              */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 /**
- * Creates a branch for the authenticated CompanyAdmin's company.
+ * Creates a branch for the authenticated user's company.
  *
- * company_id comes from the authenticated user's
- * authorization context.
+ * Required permission:
+ *
+ * branches.create
+ *
+ * IMPORTANT:
+ *
+ * company_id is NEVER accepted from the client.
  */
 export async function createBranch(
   input: BranchCreateInput,
@@ -358,10 +409,24 @@ export async function createBranch(
   BranchActionResult<Branch>
 > {
   try {
+    /* ---------------------------------------------------------------------- */
+    /* Authentication + Company Context                                      */
+    /* ---------------------------------------------------------------------- */
+
     const {
+      context,
       companyId,
     } =
-      await requireCompanyAdminAccess();
+      await requireBranchContext();
+
+    /* ---------------------------------------------------------------------- */
+    /* Authorization                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    await requirePermission(
+      context,
+      "branches.create",
+    );
 
     /* ---------------------------------------------------------------------- */
     /* Validation                                                             */
@@ -385,12 +450,12 @@ export async function createBranch(
     const values =
       validation.data;
 
+    /* ---------------------------------------------------------------------- */
+    /* Database                                                               */
+    /* ---------------------------------------------------------------------- */
+
     const supabase =
       await createSupabaseServerClient();
-
-    /* ---------------------------------------------------------------------- */
-    /* Insert                                                                 */
-    /* ---------------------------------------------------------------------- */
 
     const {
       data,
@@ -425,6 +490,10 @@ export async function createBranch(
         "createBranch error:",
         error,
       );
+
+      /* -------------------------------------------------------------------- */
+      /* PostgreSQL Unique Violation                                          */
+      /* -------------------------------------------------------------------- */
 
       if (
         error.code ===
@@ -466,14 +535,16 @@ export async function createBranch(
   }
 }
 
-
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* UPDATE BRANCH                                                              */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 /**
- * Updates a branch belonging ONLY to the authenticated
- * CompanyAdmin's company.
+ * Updates a branch belonging only to the authenticated user's company.
+ *
+ * Required permission:
+ *
+ * branches.update
  *
  * company_id cannot be changed through this action.
  */
@@ -484,6 +555,10 @@ export async function updateBranch(
   BranchActionResult<Branch>
 > {
   try {
+    /* ---------------------------------------------------------------------- */
+    /* Validate ID                                                            */
+    /* ---------------------------------------------------------------------- */
+
     if (!id?.trim()) {
       return {
         success: false,
@@ -492,10 +567,24 @@ export async function updateBranch(
       };
     }
 
+    /* ---------------------------------------------------------------------- */
+    /* Authentication + Company Context                                      */
+    /* ---------------------------------------------------------------------- */
+
     const {
+      context,
       companyId,
     } =
-      await requireCompanyAdminAccess();
+      await requireBranchContext();
+
+    /* ---------------------------------------------------------------------- */
+    /* Authorization                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    await requirePermission(
+      context,
+      "branches.update",
+    );
 
     /* ---------------------------------------------------------------------- */
     /* Validation                                                             */
@@ -519,12 +608,12 @@ export async function updateBranch(
     const values =
       validation.data;
 
+    /* ---------------------------------------------------------------------- */
+    /* Database                                                               */
+    /* ---------------------------------------------------------------------- */
+
     const supabase =
       await createSupabaseServerClient();
-
-    /* ---------------------------------------------------------------------- */
-    /* Update                                                                 */
-    /* ---------------------------------------------------------------------- */
 
     const {
       data,
@@ -567,6 +656,10 @@ export async function updateBranch(
         "updateBranch error:",
         error,
       );
+
+      /* -------------------------------------------------------------------- */
+      /* PostgreSQL Unique Violation                                          */
+      /* -------------------------------------------------------------------- */
 
       if (
         error.code ===
@@ -616,14 +709,16 @@ export async function updateBranch(
   }
 }
 
-
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* DELETE BRANCH                                                              */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 /**
- * Deletes a branch belonging ONLY to the authenticated
- * CompanyAdmin's company.
+ * Deletes a branch belonging only to the authenticated user's company.
+ *
+ * Required permission:
+ *
+ * branches.delete
  */
 export async function deleteBranch(
   id: string,
@@ -631,6 +726,10 @@ export async function deleteBranch(
   BranchActionResult
 > {
   try {
+    /* ---------------------------------------------------------------------- */
+    /* Validate ID                                                            */
+    /* ---------------------------------------------------------------------- */
+
     if (!id?.trim()) {
       return {
         success: false,
@@ -639,10 +738,28 @@ export async function deleteBranch(
       };
     }
 
+    /* ---------------------------------------------------------------------- */
+    /* Authentication + Company Context                                      */
+    /* ---------------------------------------------------------------------- */
+
     const {
+      context,
       companyId,
     } =
-      await requireCompanyAdminAccess();
+      await requireBranchContext();
+
+    /* ---------------------------------------------------------------------- */
+    /* Authorization                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    await requirePermission(
+      context,
+      "branches.delete",
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* Database                                                               */
+    /* ---------------------------------------------------------------------- */
 
     const supabase =
       await createSupabaseServerClient();
@@ -705,16 +822,19 @@ export async function deleteBranch(
   }
 }
 
-
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* TOGGLE BRANCH STATUS                                                       */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 /**
  * Toggles a branch between:
  *
- * active
- * inactive
+ * active → inactive
+ * inactive → active
+ *
+ * Required permission:
+ *
+ * branches.update
  */
 export async function toggleBranchStatus(
   id: string,
@@ -722,6 +842,10 @@ export async function toggleBranchStatus(
   BranchActionResult<Branch>
 > {
   try {
+    /* ---------------------------------------------------------------------- */
+    /* Validate ID                                                            */
+    /* ---------------------------------------------------------------------- */
+
     if (!id?.trim()) {
       return {
         success: false,
@@ -730,16 +854,30 @@ export async function toggleBranchStatus(
       };
     }
 
+    /* ---------------------------------------------------------------------- */
+    /* Authentication + Company Context                                      */
+    /* ---------------------------------------------------------------------- */
+
     const {
+      context,
       companyId,
     } =
-      await requireCompanyAdminAccess();
+      await requireBranchContext();
+
+    /* ---------------------------------------------------------------------- */
+    /* Authorization                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    await requirePermission(
+      context,
+      "branches.update",
+    );
 
     const supabase =
       await createSupabaseServerClient();
 
     /* ---------------------------------------------------------------------- */
-    /* Get current status                                                     */
+    /* Fetch Current Status                                                   */
     /* ---------------------------------------------------------------------- */
 
     const {
@@ -786,6 +924,10 @@ export async function toggleBranchStatus(
       };
     }
 
+    /* ---------------------------------------------------------------------- */
+    /* Calculate Next Status                                                  */
+    /* ---------------------------------------------------------------------- */
+
     const nextStatus =
       branch.status ===
       "active"
@@ -793,7 +935,7 @@ export async function toggleBranchStatus(
         : "active";
 
     /* ---------------------------------------------------------------------- */
-    /* Update status                                                          */
+    /* Update Status                                                          */
     /* ---------------------------------------------------------------------- */
 
     const {

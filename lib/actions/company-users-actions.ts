@@ -5,10 +5,14 @@ import {
   createSupabaseServerClient,
 } from "@/lib/db/server";
 
+import { requireCurrentUser } from "@/lib/auth";
+
 import {
-  requireCurrentUser,
-  requireSuperAdmin,
-} from "@/lib/auth";
+  isCompanyAdmin,
+  isSuperAdmin,
+  requireCompanyAccess,
+  requireCompanyManagementAccess,
+} from "@/lib/auth/authorization";
 
 import {
   companyUserCreateSchema,
@@ -21,46 +25,68 @@ import type {
   CompanyUser,
   CompanyUserRole,
   CompanyUserStatus,
+  UserTenantContext,
 } from "@/lib/types";
 
 /* -------------------------------------------------------------------------- */
 /* Database Types                                                             */
 /* -------------------------------------------------------------------------- */
 
-type CompanyUserDbRole =
-  | "user";
-
 type CompanyUserDbStatus =
   | "active"
   | "inactive"
   | "suspended";
 
+type RoleRow = {
+  id: string;
+  name: string;
+};
+
+type CompanyUserRoleRow = {
+  company_user_id: string;
+  role_id: string;
+  role: RoleRow | null;
+};
+
 type EmployeeRow = {
   id: string;
+
   first_name: string;
   middle_name: string | null;
   last_name: string;
-  email: string;
+
+  email: string | null;
   phone: string | null;
+
   department_id: string | null;
   branch_id: string | null;
+
   position: string | null;
 };
 
 type CompanyUserRow = {
   id: string;
+
   auth_user_id: string;
+
   company_id: string;
+
   username: string;
+
   email: string;
-  role: CompanyUserDbRole;
+
   status: CompanyUserDbStatus;
+
   created_by: string | null;
+
   created_at: string;
+
   updated_at: string;
+
   employee_id: string | null;
 
   display_name: string | null;
+
   phone: string | null;
 
   employee: EmployeeRow | null;
@@ -77,7 +103,7 @@ export type CompanyUserActionResult<T = null> = {
 };
 
 /* -------------------------------------------------------------------------- */
-/* Select                                                                     */
+/* Shared Select                                                              */
 /* -------------------------------------------------------------------------- */
 
 const COMPANY_USER_SELECT = `
@@ -86,7 +112,6 @@ const COMPANY_USER_SELECT = `
   company_id,
   username,
   email,
-  role,
   status,
   created_by,
   created_at,
@@ -113,54 +138,84 @@ const COMPANY_USER_SELECT = `
 /* -------------------------------------------------------------------------- */
 
 /**
- * Returns the currently authenticated application user.
+ * Returns the authenticated application user.
  *
- * CompanyAdmin:
- *   Can manage users belonging to their own company.
+ * Authentication is handled by auth.ts.
  *
- * SuperAdmin:
- *   Can manage users across the platform.
- *
- * Normal User:
- *   Cannot manage company users.
+ * Authorization is handled by authorization.ts.
  */
-async function requireCompanyUserManagementAccess() {
-  const currentUser =
-    await requireCurrentUser();
+async function getAuthorizationContext(): Promise<UserTenantContext> {
+  return requireCurrentUser();
+}
 
+/**
+ * Ensures that the current user can manage company users.
+ *
+ * Allowed:
+ *
+ * - SuperAdmin
+ * - CompanyAdmin
+ *
+ * Denied:
+ *
+ * - User
+ */
+function requireCompanyUserManagement(
+  context: UserTenantContext,
+): void {
   if (
-    currentUser.role !== "SuperAdmin" &&
-    currentUser.role !== "CompanyAdmin"
+    !isSuperAdmin(context) &&
+    !isCompanyAdmin(context)
   ) {
     throw new Error(
       "You are not authorized to manage company users.",
     );
   }
+}
 
-  if (
-    currentUser.role === "CompanyAdmin" &&
-    !currentUser.companyId
-  ) {
-    throw new Error(
-      "Company administrator is not associated with a company.",
-    );
-  }
+/**
+ * Ensures that a company ID can be accessed by the
+ * current user.
+ *
+ * SuperAdmin:
+ *   Can access any company.
+ *
+ * CompanyAdmin:
+ *   Can access only their own company.
+ */
+function requireCompanyUserCompanyAccess(
+  context: UserTenantContext,
+  companyId: string,
+): void {
+  requireCompanyAccess(
+    context,
+    companyId,
+  );
+}
 
-  return currentUser;
+/**
+ * Ensures that a company ID can be managed by the
+ * current user.
+ *
+ * SuperAdmin:
+ *   Can manage any company.
+ *
+ * CompanyAdmin:
+ *   Can manage only their own company.
+ */
+function requireCompanyUserCompanyManagement(
+  context: UserTenantContext,
+  companyId: string,
+): void {
+  requireCompanyManagementAccess(
+    context,
+    companyId,
+  );
 }
 
 /* -------------------------------------------------------------------------- */
-/* Mapping Helpers                                                            */
+/* Status Helpers                                                             */
 /* -------------------------------------------------------------------------- */
-
-function mapCompanyUserRole(
-  role: CompanyUserDbRole,
-): CompanyUserRole {
-  switch (role) {
-    case "user":
-      return "User";
-  }
-}
 
 function mapCompanyUserStatus(
   status: CompanyUserDbStatus,
@@ -177,21 +232,63 @@ function mapCompanyUserStatus(
   }
 }
 
+function mapStatusToDb(
+  status: CompanyUserStatus,
+): CompanyUserDbStatus {
+  switch (status) {
+    case "Active":
+      return "active";
+
+    case "Inactive":
+      return "inactive";
+
+    case "Suspended":
+      return "suspended";
+  }
+}
+
 /* -------------------------------------------------------------------------- */
-/* Username Generator                                                         */
+/* Role Helpers                                                               */
 /* -------------------------------------------------------------------------- */
 
 /**
- * Generates an application username.
+ * Maps the database role name to the application role.
+ *
+ * Company users currently support only:
+ *
+ * User
+ */
+function mapCompanyUserRole(
+  roleName: string | null | undefined,
+): CompanyUserRole {
+  if (
+    roleName?.trim().toLowerCase() ===
+    "user"
+  ) {
+    return "User";
+  }
+
+  /*
+   * Company users currently have only one
+   * supported application role.
+   */
+  return "User";
+}
+
+/* -------------------------------------------------------------------------- */
+/* Username Helpers                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Creates the base username.
  *
  * Example:
  *
  * John Michael Doe
- *     ↓
- * john.doe
  *
- * If that username already exists, the caller can add
- * a numeric suffix.
+ * becomes:
+ *
+ * john.michael.doe
  */
 function generateBaseUsername(
   displayName: string,
@@ -215,10 +312,10 @@ function generateBaseUsername(
   );
 }
 
-/* -------------------------------------------------------------------------- */
-/* Generate Unique Username                                                   */
-/* -------------------------------------------------------------------------- */
-
+/**
+ * Generates a username that does not already exist
+ * inside the company.
+ */
 async function generateUniqueUsername(
   supabase: Awaited<
     ReturnType<
@@ -234,7 +331,6 @@ async function generateUniqueUsername(
     );
 
   let username = base;
-
   let counter = 1;
 
   while (true) {
@@ -255,6 +351,11 @@ async function generateUniqueUsername(
       .maybeSingle();
 
     if (error) {
+      console.error(
+        "generateUniqueUsername error:",
+        error,
+      );
+
       throw new Error(
         "Failed to verify username availability.",
       );
@@ -272,87 +373,368 @@ async function generateUniqueUsername(
 }
 
 /* -------------------------------------------------------------------------- */
-/* Map Company User                                                           */
+/* Role Queries                                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Gets the role assigned to one company user.
+ *
+ * Database relationship:
+ *
+ * company_users
+ *       ↓
+ * company_user_roles
+ *       ↓
+ * roles
+ */
+async function getCompanyUserRole(
+  supabase: Awaited<
+    ReturnType<
+      typeof createSupabaseServerClient
+    >
+  >,
+  companyUserId: string,
+): Promise<CompanyUserRole> {
+  const {
+    data,
+    error,
+  } = await supabase
+    .from("company_user_roles")
+    .select(
+      `
+        company_user_id,
+        role_id,
+        role:roles (
+          id,
+          name
+        )
+      `,
+    )
+    .eq(
+      "company_user_id",
+      companyUserId,
+    )
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      "getCompanyUserRole error:",
+      error,
+    );
+
+    throw new Error(
+      "Failed to determine company user role.",
+    );
+  }
+
+  if (!data) {
+    /*
+     * Existing records without a role assignment
+     * temporarily resolve to the application's
+     * current company-user role.
+     */
+    return "User";
+  }
+
+  const role =
+    data.role as unknown as RoleRow | null;
+
+  return mapCompanyUserRole(
+    role?.name,
+  );
+}
+
+/**
+ * Gets roles for multiple company users.
+ *
+ * This avoids an N+1 query problem.
+ */
+async function getCompanyUserRoles(
+  supabase: Awaited<
+    ReturnType<
+      typeof createSupabaseServerClient
+    >
+  >,
+  companyUserIds: string[],
+): Promise<
+  Map<string, CompanyUserRole>
+> {
+  const roleMap =
+    new Map<
+      string,
+      CompanyUserRole
+    >();
+
+  if (
+    companyUserIds.length === 0
+  ) {
+    return roleMap;
+  }
+
+  const {
+    data,
+    error,
+  } = await supabase
+    .from("company_user_roles")
+    .select(
+      `
+        company_user_id,
+        role_id,
+        role:roles (
+          id,
+          name
+        )
+      `,
+    )
+    .in(
+      "company_user_id",
+      companyUserIds,
+    );
+
+  if (error) {
+    console.error(
+      "getCompanyUserRoles error:",
+      error,
+    );
+
+    throw new Error(
+      "Failed to load company user roles.",
+    );
+  }
+
+  for (const row of data ?? []) {
+    const role =
+      row.role as unknown as RoleRow | null;
+
+    roleMap.set(
+      row.company_user_id,
+      mapCompanyUserRole(
+        role?.name,
+      ),
+    );
+  }
+
+  /*
+   * Backward compatibility for existing
+   * company users without a role assignment.
+   */
+  for (const companyUserId of companyUserIds) {
+    if (
+      !roleMap.has(
+        companyUserId,
+      )
+    ) {
+      roleMap.set(
+        companyUserId,
+        "User",
+      );
+    }
+  }
+
+  return roleMap;
+}
+
+/**
+ * Gets the database role ID for the application
+ * company-user role "User".
+ */
+async function getUserRoleId(
+  supabase: Awaited<
+    ReturnType<
+      typeof createSupabaseServerClient
+    >
+  >,
+): Promise<string> {
+  const {
+    data,
+    error,
+  } = await supabase
+    .from("roles")
+    .select(
+      "id, name",
+    )
+    .eq(
+      "name",
+      "User",
+    )
+    .maybeSingle<RoleRow>();
+
+  if (error) {
+    console.error(
+      "getUserRoleId error:",
+      error,
+    );
+
+    throw new Error(
+      "Failed to find the User role.",
+    );
+  }
+
+  if (!data) {
+    throw new Error(
+      "The User role does not exist in the roles table.",
+    );
+  }
+
+  return data.id;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Employee Helpers                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Finds an employee belonging to a specific company.
+ *
+ * The company ID is always included in the query.
+ */
+async function getEmployeeForCompany(
+  supabase: Awaited<
+    ReturnType<
+      typeof createSupabaseServerClient
+    >
+  >,
+  employeeId: string,
+  companyId: string,
+) {
+  const {
+    data,
+    error,
+  } = await supabase
+    .from("employees")
+    .select(
+      `
+        id,
+        company_id,
+        first_name,
+        middle_name,
+        last_name,
+        email,
+        phone,
+        status
+      `,
+    )
+    .eq(
+      "id",
+      employeeId,
+    )
+    .eq(
+      "company_id",
+      companyId,
+    )
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      "getEmployeeForCompany error:",
+      error,
+    );
+
+    throw new Error(
+      "Failed to verify employee.",
+    );
+  }
+
+  return data;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Company Admin Helper                                                       */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Gets the company_admins record for the current
+ * authenticated CompanyAdmin.
+ *
+ * This value is used only for created_by.
+ */
+async function getCompanyAdminId(
+  supabase: Awaited<
+    ReturnType<
+      typeof createSupabaseServerClient
+    >
+  >,
+  authUserId: string,
+  companyId: string,
+): Promise<string | null> {
+  const {
+    data,
+    error,
+  } = await supabase
+    .from("company_admins")
+    .select(
+      "id",
+    )
+    .eq(
+      "auth_user_id",
+      authUserId,
+    )
+    .eq(
+      "company_id",
+      companyId,
+    )
+    .maybeSingle();
+
+  if (error) {
+    console.error(
+      "getCompanyAdminId error:",
+      error,
+    );
+
+    return null;
+  }
+
+  return data?.id ?? null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Mapping                                                                   */
 /* -------------------------------------------------------------------------- */
 
 function mapCompanyUser(
   row: CompanyUserRow,
+  role: CompanyUserRole,
 ): CompanyUser {
   return {
     id: row.id,
+    authUserId: row.auth_user_id,
+    companyId: row.company_id,
 
-    authUserId:
-      row.auth_user_id,
+    username: row.username,
+    email: row.email,
 
-    companyId:
-      row.company_id,
+    role,
 
-    username:
-      row.username,
+    status: mapCompanyUserStatus(row.status),
 
-    email:
-      row.email,
+    createdBy: row.created_by,
 
-    role:
-      mapCompanyUserRole(
-        row.role,
-      ),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
 
-    status:
-      mapCompanyUserStatus(
-        row.status,
-      ),
+    employeeId: row.employee_id,
 
-    createdBy:
-      row.created_by,
+    displayName: row.display_name,
 
-    createdAt:
-      row.created_at,
+    phone: row.phone,
 
-    updatedAt:
-      row.updated_at,
+    employee: row.employee
+      ? {
+          id: row.employee.id,
 
-    employeeId:
-      row.employee_id,
+          firstName: row.employee.first_name,
+          middleName: row.employee.middle_name,
+          lastName: row.employee.last_name,
 
-    displayName:
-      row.display_name,
+          email: row.employee.email,
+          phone: row.employee.phone,
 
-    phone:
-      row.phone,
+          departmentId: row.employee.department_id,
+          branchId: row.employee.branch_id,
 
-    employee:
-      row.employee
-        ? {
-            id:
-              row.employee.id,
-
-            firstName:
-              row.employee.first_name,
-
-            middleName:
-              row.employee.middle_name,
-
-            lastName:
-              row.employee.last_name,
-
-            email:
-              row.employee.email,
-
-            phone:
-              row.employee.phone,
-
-            departmentId:
-              row.employee
-                .department_id,
-
-            branchId:
-              row.employee.branch_id,
-
-            position:
-              row.employee.position,
-          }
-        : null,
+          position: row.employee.position,
+        }
+      : null,
   };
 }
 
@@ -364,8 +746,12 @@ export async function getCompanyUsers(): Promise<
   CompanyUserActionResult<CompanyUser[]>
 > {
   try {
-    const currentUser =
-      await requireCompanyUserManagementAccess();
+    const context =
+      await getAuthorizationContext();
+
+    requireCompanyUserManagement(
+      context,
+    );
 
     const supabase =
       await createSupabaseServerClient();
@@ -384,18 +770,31 @@ export async function getCompanyUsers(): Promise<
         );
 
     /*
-     * CompanyAdmin is tenant-scoped.
+     * SuperAdmin:
      *
-     * SuperAdmin can see all users.
+     * Can see users from all companies.
+     *
+     * CompanyAdmin:
+     *
+     * Can see users only from their company.
      */
     if (
-      currentUser.role ===
-        "CompanyAdmin"
+      isCompanyAdmin(context)
     ) {
-      query = query.eq(
-        "company_id",
-        currentUser.companyId!,
-      );
+      const companyId =
+        context.companyId;
+
+      if (!companyId) {
+        throw new Error(
+          "Company administrator is not associated with a company.",
+        );
+      }
+
+      query =
+        query.eq(
+          "company_id",
+          companyId,
+        );
     }
 
     const {
@@ -420,12 +819,25 @@ export async function getCompanyUsers(): Promise<
       (data ??
         []) as unknown as CompanyUserRow[];
 
+    const roleMap =
+      await getCompanyUserRoles(
+        supabase,
+        rows.map(
+          (row) => row.id,
+        ),
+      );
+
     return {
       success: true,
-      data:
-        rows.map(
-          mapCompanyUser,
-        ),
+      data: rows.map(
+        (row) =>
+          mapCompanyUser(
+            row,
+            roleMap.get(
+              row.id,
+            ) ?? "User",
+          ),
+      ),
     };
   } catch (error) {
     console.error(
@@ -444,7 +856,7 @@ export async function getCompanyUsers(): Promise<
 }
 
 /* -------------------------------------------------------------------------- */
-/* GET USER BY ID                                                              */
+/* GET COMPANY USER BY ID                                                     */
 /* -------------------------------------------------------------------------- */
 
 export async function getCompanyUserById(
@@ -461,35 +873,29 @@ export async function getCompanyUserById(
       };
     }
 
-    const currentUser =
-      await requireCompanyUserManagementAccess();
+    const context =
+      await getAuthorizationContext();
+
+    requireCompanyUserManagement(
+      context,
+    );
 
     const supabase =
       await createSupabaseServerClient();
 
-    let query =
-      supabase
-        .from("company_users")
-        .select(
-          COMPANY_USER_SELECT,
-        )
-        .eq("id", id);
-
-    if (
-      currentUser.role ===
-      "CompanyAdmin"
-    ) {
-      query = query.eq(
-        "company_id",
-        currentUser.companyId!,
-      );
-    }
-
     const {
       data,
       error,
-    } =
-      await query.single();
+    } = await supabase
+      .from("company_users")
+      .select(
+        COMPANY_USER_SELECT,
+      )
+      .eq(
+        "id",
+        id,
+      )
+      .maybeSingle();
 
     if (error) {
       console.error(
@@ -500,17 +906,41 @@ export async function getCompanyUserById(
       return {
         success: false,
         error:
-          error.code ===
-          "PGRST116"
-            ? "Company user not found."
-            : "Failed to fetch company user.",
+          "Failed to fetch company user.",
       };
     }
+
+    if (!data) {
+      return {
+        success: false,
+        error:
+          "Company user not found.",
+      };
+    }
+
+    /*
+     * Authorization is performed AFTER retrieving
+     * the target company's ID.
+     *
+     * This is important for SuperAdmin/CompanyAdmin
+     * tenant isolation.
+     */
+    requireCompanyUserCompanyAccess(
+      context,
+      data.company_id,
+    );
+
+    const role =
+      await getCompanyUserRole(
+        supabase,
+        data.id,
+      );
 
     return {
       success: true,
       data: mapCompanyUser(
         data as unknown as CompanyUserRow,
+        role,
       ),
     };
   } catch (error) {
@@ -547,12 +977,39 @@ export async function createCompanyUser(
     | null = null;
 
   try {
-    /* ---------------------------------------------------------------------- */
-    /* Authorization                                                          */
-    /* ---------------------------------------------------------------------- */
+    const context =
+      await getAuthorizationContext();
 
-    const currentUser =
-      await requireCompanyUserManagementAccess();
+    requireCompanyUserManagement(
+      context,
+    );
+
+    /*
+     * The current create schema does not provide
+     * a target companyId.
+     *
+     * Therefore creation must happen inside the
+     * authenticated user's company context.
+     */
+    const companyId =
+      context.companyId;
+
+    if (!companyId) {
+      return {
+        success: false,
+        error:
+          "A company is required to create a company user.",
+      };
+    }
+
+    /*
+     * Creating the user is a management operation
+     * against this specific company.
+     */
+    requireCompanyUserCompanyManagement(
+      context,
+      companyId,
+    );
 
     /* ---------------------------------------------------------------------- */
     /* Validation                                                             */
@@ -587,73 +1044,23 @@ export async function createCompanyUser(
       createSupabaseAdminClient();
 
     /* ---------------------------------------------------------------------- */
-    /* Determine Company                                                      */
+    /* Employee                                                               */
     /* ---------------------------------------------------------------------- */
 
-    let companyId =
-      currentUser.companyId;
-
-    /*
-     * SuperAdmin must provide a company through
-     * a future platform-level workflow.
-     *
-     * Since this action is primarily intended for
-     * CompanyAdmin, do not allow a SuperAdmin to
-     * accidentally create an orphaned user.
-     */
-    if (!companyId) {
-      return {
-        success: false,
-        error:
-          "A company is required to create a company user.",
-      };
-    }
-
-    /* ---------------------------------------------------------------------- */
-    /* Verify Employee                                                        */
-    /* ---------------------------------------------------------------------- */
-
-    const {
-      data: employee,
-      error: employeeError,
-    } = await supabase
-      .from("employees")
-      .select(
-        `
-          id,
-          company_id,
-          first_name,
-          middle_name,
-          last_name,
-          email,
-          phone,
-          status
-        `,
-      )
-      .eq(
-        "id",
+    const employee =
+      await getEmployeeForCompany(
+        supabase,
         values.employeeId,
-      )
-      .eq(
-        "company_id",
         companyId,
-      )
-      .single();
+      );
 
-    if (
-      employeeError ||
-      !employee
-    ) {
+    if (!employee) {
       return {
         success: false,
         error:
           "Employee was not found in your company.",
       };
     }
-
-    /* ---------------------------------------------------------------------- */
-    /* Employee Status                                                        */
-    /* ---------------------------------------------------------------------- */
 
     if (
       employee.status !==
@@ -667,7 +1074,7 @@ export async function createCompanyUser(
     }
 
     /* ---------------------------------------------------------------------- */
-    /* Check Existing Employee Account                                        */
+    /* Existing Employee Account                                              */
     /* ---------------------------------------------------------------------- */
 
     const {
@@ -676,7 +1083,9 @@ export async function createCompanyUser(
         existingEmployeeUserError,
     } = await supabase
       .from("company_users")
-      .select("id")
+      .select(
+        "id",
+      )
       .eq(
         "employee_id",
         values.employeeId,
@@ -709,14 +1118,17 @@ export async function createCompanyUser(
     }
 
     /* ---------------------------------------------------------------------- */
-    /* Check Company Email                                                    */
+    /* Existing Company Email                                                 */
     /* ---------------------------------------------------------------------- */
 
     const {
       data: existingEmail,
+      error: existingEmailError,
     } = await supabase
       .from("company_users")
-      .select("id")
+      .select(
+        "id",
+      )
       .eq(
         "company_id",
         companyId,
@@ -726,6 +1138,19 @@ export async function createCompanyUser(
         values.email,
       )
       .maybeSingle();
+
+    if (existingEmailError) {
+      console.error(
+        "createCompanyUser email check:",
+        existingEmailError,
+      );
+
+      return {
+        success: false,
+        error:
+          "Failed to verify email availability.",
+      };
+    }
 
     if (existingEmail) {
       return {
@@ -747,7 +1172,16 @@ export async function createCompanyUser(
       );
 
     /* ---------------------------------------------------------------------- */
-    /* CREATE AUTH USER                                                       */
+    /* Role                                                                   */
+    /* ---------------------------------------------------------------------- */
+
+    const userRoleId =
+      await getUserRoleId(
+        supabase,
+      );
+
+    /* ---------------------------------------------------------------------- */
+    /* Auth User                                                              */
     /* ---------------------------------------------------------------------- */
 
     const {
@@ -765,8 +1199,21 @@ export async function createCompanyUser(
           email_confirm:
             true,
 
+          /*
+           * Authorization is NOT based on this
+           * metadata.
+           *
+           * The application's source of truth is:
+           *
+           * company_users
+           *      ↓
+           * company_user_roles
+           *      ↓
+           * roles
+           *
+           * Keep only useful identity metadata.
+           */
           app_metadata: {
-            role: "User",
             company_id:
               companyId,
 
@@ -797,8 +1244,17 @@ export async function createCompanyUser(
       authData.user.id;
 
     /* ---------------------------------------------------------------------- */
-    /* CREATE COMPANY USER                                                    */
+    /* Company User                                                           */
     /* ---------------------------------------------------------------------- */
+
+    const createdBy =
+      isCompanyAdmin(context)
+        ? await getCompanyAdminId(
+            supabase,
+            context.id,
+            companyId,
+          )
+        : null;
 
     const {
       data: companyUser,
@@ -824,22 +1280,14 @@ export async function createCompanyUser(
         phone:
           values.phone,
 
-        role: "user",
-
-        status: "active",
+        status:
+          "active",
 
         employee_id:
           values.employeeId,
 
         created_by:
-          currentUser.role ===
-          "CompanyAdmin"
-            ? await getCompanyAdminId(
-                supabase,
-                currentUser.id,
-                companyId,
-              )
-            : null,
+          createdBy,
       })
       .select(
         COMPANY_USER_SELECT,
@@ -855,9 +1303,6 @@ export async function createCompanyUser(
         companyUserError,
       );
 
-      /*
-       * Roll back Auth account.
-       */
       await supabaseAdmin.auth.admin.deleteUser(
         createdAuthUserId,
       );
@@ -874,10 +1319,62 @@ export async function createCompanyUser(
     createdCompanyUserId =
       companyUser.id;
 
+    /* ---------------------------------------------------------------------- */
+    /* Assign User Role                                                       */
+    /* ---------------------------------------------------------------------- */
+
+    const {
+      error: roleAssignmentError,
+    } = await supabase
+      .from("company_user_roles")
+      .insert({
+        company_user_id:
+          createdCompanyUserId,
+
+        role_id:
+          userRoleId,
+      });
+
+    if (roleAssignmentError) {
+      console.error(
+        "createCompanyUser role assignment error:",
+        roleAssignmentError,
+      );
+
+      await supabase
+        .from("company_users")
+        .delete()
+        .eq(
+          "id",
+          createdCompanyUserId,
+        );
+
+      createdCompanyUserId =
+        null;
+
+      await supabaseAdmin.auth.admin.deleteUser(
+        createdAuthUserId,
+      );
+
+      createdAuthUserId =
+        null;
+
+      return {
+        success: false,
+        error:
+          "Failed to assign the company user role.",
+      };
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Return                                                                 */
+    /* ---------------------------------------------------------------------- */
+
     return {
       success: true,
       data: mapCompanyUser(
         companyUser as unknown as CompanyUserRow,
+        "User",
       ),
     };
   } catch (error) {
@@ -890,12 +1387,35 @@ export async function createCompanyUser(
      * Best-effort cleanup.
      */
     try {
+      const supabase =
+        await createSupabaseServerClient();
+
+      const supabaseAdmin =
+        createSupabaseAdminClient();
+
+      if (
+        createdCompanyUserId
+      ) {
+        await supabase
+          .from("company_user_roles")
+          .delete()
+          .eq(
+            "company_user_id",
+            createdCompanyUserId,
+          );
+
+        await supabase
+          .from("company_users")
+          .delete()
+          .eq(
+            "id",
+            createdCompanyUserId,
+          );
+      }
+
       if (
         createdAuthUserId
       ) {
-        const supabaseAdmin =
-          createSupabaseAdminClient();
-
         await supabaseAdmin.auth.admin.deleteUser(
           createdAuthUserId,
         );
@@ -918,47 +1438,6 @@ export async function createCompanyUser(
 }
 
 /* -------------------------------------------------------------------------- */
-/* GET COMPANY ADMIN ID                                                       */
-/* -------------------------------------------------------------------------- */
-
-async function getCompanyAdminId(
-  supabase: Awaited<
-    ReturnType<
-      typeof createSupabaseServerClient
-    >
-  >,
-  authUserId: string,
-  companyId: string,
-): Promise<string | null> {
-  const {
-    data,
-    error,
-  } = await supabase
-    .from("company_admins")
-    .select("id")
-    .eq(
-      "auth_user_id",
-      authUserId,
-    )
-    .eq(
-      "company_id",
-      companyId,
-    )
-    .maybeSingle();
-
-  if (error) {
-    console.error(
-      "getCompanyAdminId error:",
-      error,
-    );
-
-    return null;
-  }
-
-  return data?.id ?? null;
-}
-
-/* -------------------------------------------------------------------------- */
 /* UPDATE COMPANY USER                                                        */
 /* -------------------------------------------------------------------------- */
 
@@ -977,8 +1456,12 @@ export async function updateCompanyUser(
       };
     }
 
-    const currentUser =
-      await requireCompanyUserManagementAccess();
+    const context =
+      await getAuthorizationContext();
+
+    requireCompanyUserManagement(
+      context,
+    );
 
     const validation =
       companyUserUpdateSchema.safeParse(
@@ -1002,43 +1485,42 @@ export async function updateCompanyUser(
       await createSupabaseServerClient();
 
     /* ---------------------------------------------------------------------- */
-    /* Get Existing User                                                      */
+    /* Find Existing User                                                     */
     /* ---------------------------------------------------------------------- */
-
-    let existingQuery =
-      supabase
-        .from("company_users")
-        .select(
-          `
-            id,
-            auth_user_id,
-            company_id,
-            employee_id
-          `,
-        )
-        .eq("id", id);
-
-    if (
-      currentUser.role ===
-      "CompanyAdmin"
-    ) {
-      existingQuery =
-        existingQuery.eq(
-          "company_id",
-          currentUser.companyId!,
-        );
-    }
 
     const {
       data: existingUser,
       error: existingError,
-    } =
-      await existingQuery.single();
+    } = await supabase
+      .from("company_users")
+      .select(
+        `
+          id,
+          auth_user_id,
+          company_id,
+          employee_id
+        `,
+      )
+      .eq(
+        "id",
+        id,
+      )
+      .maybeSingle();
 
-    if (
-      existingError ||
-      !existingUser
-    ) {
+    if (existingError) {
+      console.error(
+        "updateCompanyUser existing user error:",
+        existingError,
+      );
+
+      return {
+        success: false,
+        error:
+          "Failed to find company user.",
+      };
+    }
+
+    if (!existingUser) {
       return {
         success: false,
         error:
@@ -1046,15 +1528,28 @@ export async function updateCompanyUser(
       };
     }
 
+    /*
+     * Tenant authorization is based on the
+     * company's ID stored in the database,
+     * never on a client-provided company ID.
+     */
+    requireCompanyUserCompanyManagement(
+      context,
+      existingUser.company_id,
+    );
+
     /* ---------------------------------------------------------------------- */
-    /* Check Email                                                            */
+    /* Duplicate Email                                                        */
     /* ---------------------------------------------------------------------- */
 
     const {
       data: duplicateEmail,
+      error: duplicateEmailError,
     } = await supabase
       .from("company_users")
-      .select("id")
+      .select(
+        "id",
+      )
       .eq(
         "company_id",
         existingUser.company_id,
@@ -1069,6 +1564,19 @@ export async function updateCompanyUser(
       )
       .maybeSingle();
 
+    if (duplicateEmailError) {
+      console.error(
+        "updateCompanyUser email check:",
+        duplicateEmailError,
+      );
+
+      return {
+        success: false,
+        error:
+          "Failed to verify email availability.",
+      };
+    }
+
     if (duplicateEmail) {
       return {
         success: false,
@@ -1078,7 +1586,7 @@ export async function updateCompanyUser(
     }
 
     /* ---------------------------------------------------------------------- */
-    /* Update Database                                                        */
+    /* Update                                                                 */
     /* ---------------------------------------------------------------------- */
 
     const {
@@ -1096,28 +1604,40 @@ export async function updateCompanyUser(
         display_name:
           values.displayName,
 
-        role: "user",
-
         status:
-          values.status ===
-          "Active"
-            ? "active"
-            : values.status ===
-                "Inactive"
-              ? "inactive"
-              : "suspended",
+          mapStatusToDb(
+            values.status,
+          ),
       })
-      .eq("id", id)
+      .eq(
+        "id",
+        id,
+      )
+      .eq(
+        "company_id",
+        existingUser.company_id,
+      )
       .select(
         COMPANY_USER_SELECT,
       )
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error(
         "updateCompanyUser error:",
         error,
       );
+
+      if (
+        error.code ===
+        "23505"
+      ) {
+        return {
+          success: false,
+          error:
+            "Another company user already uses this email.",
+        };
+      }
 
       return {
         success: false,
@@ -1126,10 +1646,25 @@ export async function updateCompanyUser(
       };
     }
 
+    if (!data) {
+      return {
+        success: false,
+        error:
+          "Company user not found.",
+      };
+    }
+
+    const role =
+      await getCompanyUserRole(
+        supabase,
+        id,
+      );
+
     return {
       success: true,
       data: mapCompanyUser(
         data as unknown as CompanyUserRow,
+        role,
       ),
     };
   } catch (error) {
@@ -1166,8 +1701,12 @@ export async function deleteCompanyUser(
       };
     }
 
-    const currentUser =
-      await requireCompanyUserManagementAccess();
+    const context =
+      await getAuthorizationContext();
+
+    requireCompanyUserManagement(
+      context,
+    );
 
     const supabase =
       await createSupabaseServerClient();
@@ -1179,34 +1718,38 @@ export async function deleteCompanyUser(
     /* Find User                                                              */
     /* ---------------------------------------------------------------------- */
 
-    let query =
-      supabase
-        .from("company_users")
-        .select(
-          "id, auth_user_id, company_id",
-        )
-        .eq("id", id);
-
-    if (
-      currentUser.role ===
-      "CompanyAdmin"
-    ) {
-      query = query.eq(
-        "company_id",
-        currentUser.companyId!,
-      );
-    }
-
     const {
       data: companyUser,
-      error:
-        companyUserError,
-    } = await query.single();
+      error: companyUserError,
+    } = await supabase
+      .from("company_users")
+      .select(
+        `
+          id,
+          auth_user_id,
+          company_id
+        `,
+      )
+      .eq(
+        "id",
+        id,
+      )
+      .maybeSingle();
 
-    if (
-      companyUserError ||
-      !companyUser
-    ) {
+    if (companyUserError) {
+      console.error(
+        "deleteCompanyUser lookup error:",
+        companyUserError,
+      );
+
+      return {
+        success: false,
+        error:
+          "Failed to find company user.",
+      };
+    }
+
+    if (!companyUser) {
       return {
         success: false,
         error:
@@ -1214,8 +1757,44 @@ export async function deleteCompanyUser(
       };
     }
 
+    /*
+     * Authorization happens using the target
+     * company's database value.
+     */
+    requireCompanyUserCompanyManagement(
+      context,
+      companyUser.company_id,
+    );
+
     /* ---------------------------------------------------------------------- */
-    /* Delete company_users                                                   */
+    /* Delete Role Assignments                                                */
+    /* ---------------------------------------------------------------------- */
+
+    const {
+      error: roleDeleteError,
+    } = await supabase
+      .from("company_user_roles")
+      .delete()
+      .eq(
+        "company_user_id",
+        id,
+      );
+
+    if (roleDeleteError) {
+      console.error(
+        "deleteCompanyUser role error:",
+        roleDeleteError,
+      );
+
+      return {
+        success: false,
+        error:
+          "Failed to remove company user roles.",
+      };
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Delete Company User                                                    */
     /* ---------------------------------------------------------------------- */
 
     const {
@@ -1223,7 +1802,14 @@ export async function deleteCompanyUser(
     } = await supabase
       .from("company_users")
       .delete()
-      .eq("id", id);
+      .eq(
+        "id",
+        id,
+      )
+      .eq(
+        "company_id",
+        companyUser.company_id,
+      );
 
     if (deleteError) {
       console.error(
@@ -1255,10 +1841,6 @@ export async function deleteCompanyUser(
         authDeleteError,
       );
 
-      /*
-       * The database record has already been removed.
-       * We report the Auth issue so it can be handled.
-       */
       return {
         success: false,
         error:
@@ -1286,7 +1868,7 @@ export async function deleteCompanyUser(
 }
 
 /* -------------------------------------------------------------------------- */
-/* UPDATE USER STATUS                                                         */
+/* UPDATE COMPANY USER STATUS                                                 */
 /* -------------------------------------------------------------------------- */
 
 export async function updateCompanyUserStatus(
@@ -1304,45 +1886,93 @@ export async function updateCompanyUserStatus(
       };
     }
 
-    const currentUser =
-      await requireCompanyUserManagementAccess();
+    const context =
+      await getAuthorizationContext();
+
+    requireCompanyUserManagement(
+      context,
+    );
 
     const supabase =
       await createSupabaseServerClient();
 
     const dbStatus =
-      status === "Active"
-        ? "active"
-        : status === "Inactive"
-          ? "inactive"
-          : "suspended";
-
-    let query =
-      supabase
-        .from("company_users")
-        .update({
-          status: dbStatus,
-        })
-        .eq("id", id);
-
-    if (
-      currentUser.role ===
-      "CompanyAdmin"
-    ) {
-      query = query.eq(
-        "company_id",
-        currentUser.companyId!,
+      mapStatusToDb(
+        status,
       );
+
+    /* ---------------------------------------------------------------------- */
+    /* Find Target User                                                       */
+    /* ---------------------------------------------------------------------- */
+
+    const {
+      data: existingUser,
+      error: existingError,
+    } = await supabase
+      .from("company_users")
+      .select(
+        `
+          id,
+          company_id
+        `,
+      )
+      .eq(
+        "id",
+        id,
+      )
+      .maybeSingle();
+
+    if (existingError) {
+      console.error(
+        "updateCompanyUserStatus lookup error:",
+        existingError,
+      );
+
+      return {
+        success: false,
+        error:
+          "Failed to find company user.",
+      };
     }
+
+    if (!existingUser) {
+      return {
+        success: false,
+        error:
+          "Company user not found.",
+      };
+    }
+
+    requireCompanyUserCompanyManagement(
+      context,
+      existingUser.company_id,
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* Update                                                                 */
+    /* ---------------------------------------------------------------------- */
 
     const {
       data,
       error,
-    } = await query
+    } = await supabase
+      .from("company_users")
+      .update({
+        status:
+          dbStatus,
+      })
+      .eq(
+        "id",
+        id,
+      )
+      .eq(
+        "company_id",
+        existingUser.company_id,
+      )
       .select(
         COMPANY_USER_SELECT,
       )
-      .single();
+      .maybeSingle();
 
     if (error) {
       console.error(
@@ -1357,10 +1987,25 @@ export async function updateCompanyUserStatus(
       };
     }
 
+    if (!data) {
+      return {
+        success: false,
+        error:
+          "Company user not found.",
+      };
+    }
+
+    const role =
+      await getCompanyUserRole(
+        supabase,
+        id,
+      );
+
     return {
       success: true,
       data: mapCompanyUser(
         data as unknown as CompanyUserRow,
+        role,
       ),
     };
   } catch (error) {

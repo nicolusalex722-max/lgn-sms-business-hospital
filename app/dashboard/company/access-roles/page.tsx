@@ -12,7 +12,7 @@ export default function AccessRolesPage() {
       <div className="flex items-center gap-3">
         <button
           type="button"
-          onClick={() => router.push("/dashboard/company-profile")}
+          onClick={() => router.push("/dashboard/company/profile")}
           aria-label="Back to Company Profile"
           className="text-slate-400 hover:text-slate-600 transition-colors"
         >

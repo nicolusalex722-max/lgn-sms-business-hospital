@@ -1,17 +1,12 @@
+
 "use client";
 
-import { useState, useTransition } from "react";
-
+import { useState } from "react";
 import { Eye, EyeOff, LogIn } from "lucide-react";
-
+import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-
-import { loginSchema, type LoginInput } from "@/lib/validations/auth-schema";
-
-import { userLogin } from "@/lib/actions/auth-actions";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
 
 import {
   Form,
@@ -21,25 +16,30 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form";
-
 import { Input } from "@/components/ui/input";
-
 import { Button } from "@/components/ui/button";
 
+import {
+  loginSchema,
+  type LoginInput,
+} from "@/lib/validations/auth-schema";
+
+import { userLogin } from "@/lib/actions/auth-actions";
+
 export default function LoginForm() {
+  const router = useRouter();
+
   const [showPassword, setShowPassword] = useState(false);
-  const [isPending, startTransition] = useTransition();
 
   const form = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),
-
     defaultValues: {
       email: "",
       password: "",
     },
   });
 
-  const router = useRouter();
+  const isSubmitting = form.formState.isSubmitting;
 
   async function onSubmit(values: LoginInput) {
     try {
@@ -53,7 +53,9 @@ export default function LoginForm() {
       toast.success(result.message);
 
       router.push("/dashboard");
-    } catch {
+    } catch (error) {
+      console.error("Login error:", error);
+
       toast.error("Something went wrong. Please try again.");
     }
   }
@@ -61,13 +63,11 @@ export default function LoginForm() {
   return (
     <Form {...form}>
       <form
-        onSubmit={form.handleSubmit((values) =>
-          startTransition(() => onSubmit(values)),
-        )}
-        className="space-y-5"
+        onSubmit={form.handleSubmit(onSubmit)}
+        className="space-y-6"
+        noValidate
       >
         {/* Email */}
-
         <FormField
           control={form.control}
           name="email"
@@ -77,12 +77,12 @@ export default function LoginForm() {
 
               <FormControl>
                 <Input
+                  {...field}
                   type="email"
                   autoComplete="email"
                   placeholder="admin@example.com"
-                  disabled={isPending}
-                  className="h-12 border-slate-300 focus-visible:ring-[#006b3c]"
-                  {...field}
+                  disabled={isSubmitting}
+                  className="h-12 border-slate-300 bg-white/80 transition-colors focus-visible:border-[#006b3c] focus-visible:ring-[#006b3c]"
                 />
               </FormControl>
 
@@ -92,7 +92,6 @@ export default function LoginForm() {
         />
 
         {/* Password */}
-
         <FormField
           control={form.control}
           name="password"
@@ -103,22 +102,25 @@ export default function LoginForm() {
               <FormControl>
                 <div className="relative">
                   <Input
+                    {...field}
                     type={showPassword ? "text" : "password"}
                     autoComplete="current-password"
                     placeholder="••••••••"
-                    disabled={isPending}
-                    className="h-12 border-slate-300 pr-11 focus-visible:ring-[#006b3c]"
-                    {...field}
+                    disabled={isSubmitting}
+                    className="h-12 border-slate-300 bg-white/80 pr-11 transition-colors focus-visible:border-[#006b3c] focus-visible:ring-[#006b3c]"
                   />
 
                   <button
                     type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    disabled={isPending}
+                    disabled={isSubmitting}
+                    onClick={() => setShowPassword((previous) => !previous)}
                     aria-label={
-                      showPassword ? "Ficha nenosiri" : "Onyesha nenosiri"
+                      showPassword
+                        ? "Hide password"
+                        : "Show password"
                     }
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition hover:text-foreground"
+                    aria-pressed={showPassword}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {showPassword ? (
                       <EyeOff className="h-4 w-4" />
@@ -134,15 +136,18 @@ export default function LoginForm() {
           )}
         />
 
+        {/* Submit */}
         <Button
           type="submit"
-          className="h-12 w-full bg-[#006b3c] hover:bg-[#005631]"
-          disabled={isPending}
+          disabled={isSubmitting}
+          className="h-12 w-full bg-[#006b3c] font-medium text-white transition-colors hover:bg-[#005631] disabled:cursor-not-allowed disabled:opacity-70"
         >
           <LogIn className="mr-2 h-4 w-4" />
-          {isPending ? "Inaingia..." : "Ingia"}
+
+          {isSubmitting ? "Inaingia..." : "Ingia"}
         </Button>
       </form>
     </Form>
   );
 }
+

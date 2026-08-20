@@ -1,12 +1,13 @@
 "use server";
 
-import {
-  createSupabaseServerClient,
-} from "@/lib/db/server";
+import { createSupabaseServerClient } from "@/lib/db/server";
+
+import { requireUserTenantContext } from "@/lib/auth";
 
 import {
-  requireCurrentUser,
-} from "@/lib/auth";
+  requireCompanyContext,
+  requirePermission,
+} from "@/lib/auth/authorization";
 
 import {
   departmentCreateSchema,
@@ -18,11 +19,12 @@ import {
 import type {
   Department,
   DepartmentStatus,
+  UserTenantContext,
 } from "@/lib/types";
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* Database Types                                                             */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 type DepartmentDbStatus =
   | "active"
@@ -39,9 +41,9 @@ type DepartmentRow = {
   updated_at: string;
 };
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* Action Result                                                              */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 export type DepartmentActionResult<T = null> = {
   success: boolean;
@@ -49,9 +51,9 @@ export type DepartmentActionResult<T = null> = {
   error?: string;
 };
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* Shared Select                                                              */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 const DEPARTMENT_SELECT = `
   id,
@@ -64,48 +66,47 @@ const DEPARTMENT_SELECT = `
   updated_at
 `;
 
-/* -------------------------------------------------------------------------- */
-/* Authorization                                                             */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
+/* Authorization Context                                                      */
+/* ========================================================================== */
 
 /**
- * Returns the authenticated CompanyAdmin's company ID.
+ * Resolves the authorization context required by department actions.
+ *
+ * Flow:
+ *
+ * authenticated Supabase user
+ *          ↓
+ * UserTenantContext
+ *          ↓
+ * company context
  *
  * IMPORTANT:
  *
- * companyId is NEVER accepted from the UI.
+ * companyId is NEVER accepted from the client.
  *
- * The tenant/company is always taken from the
- * authenticated user's authorization context.
+ * The company is always resolved from the authenticated user's
+ * authorization context.
  */
-async function requireCompanyAdminAccess(): Promise<{
-  userId: string;
+async function requireDepartmentContext(): Promise<{
+  context: UserTenantContext;
   companyId: string;
 }> {
-  const currentUser =
-    await requireCurrentUser();
+  const context =
+    await requireUserTenantContext();
 
-  if (currentUser.role !== "CompanyAdmin") {
-    throw new Error(
-      "Only CompanyAdmin users can manage departments.",
-    );
-  }
-
-  if (!currentUser.companyId) {
-    throw new Error(
-      "Authenticated CompanyAdmin is not associated with a company.",
-    );
-  }
+  const companyId =
+    requireCompanyContext(context);
 
   return {
-    userId: currentUser.id,
-    companyId: currentUser.companyId,
+    context,
+    companyId,
   };
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* Mapping Helpers                                                            */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 function mapDepartmentStatus(
   status: DepartmentDbStatus,
@@ -119,9 +120,9 @@ function mapDepartmentStatus(
   }
 }
 
-/* -------------------------------------------------------------------------- */
-/* Map Department                                                             */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
+/* Map Database Row → Application Department                                  */
+/* ========================================================================== */
 
 function mapDepartment(
   row: DepartmentRow,
@@ -154,36 +155,51 @@ function mapDepartment(
   };
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* GET ALL DEPARTMENTS                                                        */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 /**
- * Returns departments belonging ONLY to the authenticated
- * CompanyAdmin's company.
+ * Returns departments belonging to the authenticated user's company.
  *
- * Example:
+ * Required permission:
  *
- * Company A Admin
- *      ↓
- * companyId = A
- *      ↓
- * departments WHERE company_id = A
+ * departments.view
  *
- * Company B Admin
- *      ↓
- * companyId = B
- *      ↓
- * departments WHERE company_id = B
+ * Tenant isolation:
+ *
+ * authenticated user
+ *       ↓
+ * company context
+ *       ↓
+ * .eq("company_id", companyId)
  */
 export async function getDepartments(): Promise<
   DepartmentActionResult<Department[]>
 > {
   try {
+    /* ---------------------------------------------------------------------- */
+    /* Authentication + Company Context                                      */
+    /* ---------------------------------------------------------------------- */
+
     const {
+      context,
       companyId,
     } =
-      await requireCompanyAdminAccess();
+      await requireDepartmentContext();
+
+    /* ---------------------------------------------------------------------- */
+    /* Authorization                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    await requirePermission(
+      context,
+      "departments.view",
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* Database                                                               */
+    /* ---------------------------------------------------------------------- */
 
     const supabase =
       await createSupabaseServerClient();
@@ -191,22 +207,13 @@ export async function getDepartments(): Promise<
     const {
       data,
       error,
-    } =
-      await supabase
-        .from("departments")
-        .select(
-          DEPARTMENT_SELECT,
-        )
-        .eq(
-          "company_id",
-          companyId,
-        )
-        .order(
-          "created_at",
-          {
-            ascending: false,
-          },
-        );
+    } = await supabase
+      .from("departments")
+      .select(DEPARTMENT_SELECT)
+      .eq("company_id", companyId)
+      .order("created_at", {
+        ascending: false,
+      });
 
     if (error) {
       console.error(
@@ -222,14 +229,11 @@ export async function getDepartments(): Promise<
     }
 
     const rows =
-      (data ??
-        []) as unknown as DepartmentRow[];
+      (data ?? []) as unknown as DepartmentRow[];
 
     return {
       success: true,
-      data: rows.map(
-        mapDepartment,
-      ),
+      data: rows.map(mapDepartment),
     };
   } catch (error) {
     console.error(
@@ -247,17 +251,24 @@ export async function getDepartments(): Promise<
   }
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* GET DEPARTMENT BY ID                                                       */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 /**
- * Fetches one department.
+ * Fetches a single department belonging to the authenticated user's company.
  *
- * The query ALWAYS includes company_id.
+ * Required permission:
  *
- * Therefore a CompanyAdmin cannot retrieve another
- * company's department simply by knowing its UUID.
+ * departments.view
+ *
+ * IMPORTANT:
+ *
+ * The department ID alone is NOT sufficient.
+ *
+ * The query also checks company_id.
+ *
+ * This prevents cross-company access.
  */
 export async function getDepartmentById(
   id: string,
@@ -265,6 +276,10 @@ export async function getDepartmentById(
   DepartmentActionResult<Department>
 > {
   try {
+    /* ---------------------------------------------------------------------- */
+    /* Validate ID                                                            */
+    /* ---------------------------------------------------------------------- */
+
     if (!id?.trim()) {
       return {
         success: false,
@@ -273,10 +288,28 @@ export async function getDepartmentById(
       };
     }
 
+    /* ---------------------------------------------------------------------- */
+    /* Authentication + Company Context                                      */
+    /* ---------------------------------------------------------------------- */
+
     const {
+      context,
       companyId,
     } =
-      await requireCompanyAdminAccess();
+      await requireDepartmentContext();
+
+    /* ---------------------------------------------------------------------- */
+    /* Authorization                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    await requirePermission(
+      context,
+      "departments.view",
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* Database                                                               */
+    /* ---------------------------------------------------------------------- */
 
     const supabase =
       await createSupabaseServerClient();
@@ -284,21 +317,12 @@ export async function getDepartmentById(
     const {
       data,
       error,
-    } =
-      await supabase
-        .from("departments")
-        .select(
-          DEPARTMENT_SELECT,
-        )
-        .eq(
-          "id",
-          id,
-        )
-        .eq(
-          "company_id",
-          companyId,
-        )
-        .maybeSingle();
+    } = await supabase
+      .from("departments")
+      .select(DEPARTMENT_SELECT)
+      .eq("id", id)
+      .eq("company_id", companyId)
+      .maybeSingle();
 
     if (error) {
       console.error(
@@ -343,20 +367,20 @@ export async function getDepartmentById(
   }
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* CREATE DEPARTMENT                                                          */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 /**
- * Creates a department for the authenticated CompanyAdmin's company.
+ * Creates a department for the authenticated user's company.
  *
- * company_id is intentionally NOT accepted from the UI.
+ * Required permission:
  *
- * It is obtained from:
+ * departments.create
  *
- * requireCurrentUser()
- *      ↓
- * currentUser.companyId
+ * IMPORTANT:
+ *
+ * company_id is NEVER accepted from the client.
  */
 export async function createDepartment(
   input: DepartmentCreateInput,
@@ -364,10 +388,24 @@ export async function createDepartment(
   DepartmentActionResult<Department>
 > {
   try {
+    /* ---------------------------------------------------------------------- */
+    /* Authentication + Company Context                                      */
+    /* ---------------------------------------------------------------------- */
+
     const {
+      context,
       companyId,
     } =
-      await requireCompanyAdminAccess();
+      await requireDepartmentContext();
+
+    /* ---------------------------------------------------------------------- */
+    /* Authorization                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    await requirePermission(
+      context,
+      "departments.create",
+    );
 
     /* ---------------------------------------------------------------------- */
     /* Validation                                                             */
@@ -391,40 +429,34 @@ export async function createDepartment(
     const values =
       validation.data;
 
+    /* ---------------------------------------------------------------------- */
+    /* Database                                                               */
+    /* ---------------------------------------------------------------------- */
+
     const supabase =
       await createSupabaseServerClient();
-
-    /* ---------------------------------------------------------------------- */
-    /* Create                                                                 */
-    /* ---------------------------------------------------------------------- */
 
     const {
       data,
       error,
-    } =
-      await supabase
-        .from("departments")
-        .insert({
-          company_id:
-            companyId,
+    } = await supabase
+      .from("departments")
+      .insert({
+        company_id: companyId,
 
-          department_name:
-            values.departmentName,
+        department_name:
+          values.departmentName,
 
-          department_code:
-            values.departmentCode,
+        department_code:
+          values.departmentCode,
 
-          description:
-            values.description ||
-            null,
+        description:
+          values.description || null,
 
-          status:
-            "active",
-        })
-        .select(
-          DEPARTMENT_SELECT,
-        )
-        .single();
+        status: "active",
+      })
+      .select(DEPARTMENT_SELECT)
+      .single();
 
     if (error) {
       console.error(
@@ -432,17 +464,11 @@ export async function createDepartment(
         error,
       );
 
-      /*
-       * PostgreSQL unique constraint.
-       *
-       * This normally corresponds to:
-       *
-       * unique(company_id, department_code)
-       */
-      if (
-        error.code ===
-        "23505"
-      ) {
+      /* -------------------------------------------------------------------- */
+      /* PostgreSQL Unique Violation                                          */
+      /* -------------------------------------------------------------------- */
+
+      if (error.code === "23505") {
         return {
           success: false,
           error:
@@ -479,15 +505,18 @@ export async function createDepartment(
   }
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* UPDATE DEPARTMENT                                                          */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 /**
- * Updates a department belonging ONLY to the authenticated
- * CompanyAdmin's company.
+ * Updates a department belonging only to the authenticated user's company.
  *
- * The company_id can NEVER be changed through this action.
+ * Required permission:
+ *
+ * departments.update
+ *
+ * company_id cannot be changed through this action.
  */
 export async function updateDepartment(
   id: string,
@@ -496,6 +525,10 @@ export async function updateDepartment(
   DepartmentActionResult<Department>
 > {
   try {
+    /* ---------------------------------------------------------------------- */
+    /* Validate ID                                                            */
+    /* ---------------------------------------------------------------------- */
+
     if (!id?.trim()) {
       return {
         success: false,
@@ -504,10 +537,24 @@ export async function updateDepartment(
       };
     }
 
+    /* ---------------------------------------------------------------------- */
+    /* Authentication + Company Context                                      */
+    /* ---------------------------------------------------------------------- */
+
     const {
+      context,
       companyId,
     } =
-      await requireCompanyAdminAccess();
+      await requireDepartmentContext();
+
+    /* ---------------------------------------------------------------------- */
+    /* Authorization                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    await requirePermission(
+      context,
+      "departments.update",
+    );
 
     /* ---------------------------------------------------------------------- */
     /* Validation                                                             */
@@ -531,48 +578,37 @@ export async function updateDepartment(
     const values =
       validation.data;
 
+    /* ---------------------------------------------------------------------- */
+    /* Database                                                               */
+    /* ---------------------------------------------------------------------- */
+
     const supabase =
       await createSupabaseServerClient();
-
-    /* ---------------------------------------------------------------------- */
-    /* Update                                                                 */
-    /* ---------------------------------------------------------------------- */
 
     const {
       data,
       error,
-    } =
-      await supabase
-        .from("departments")
-        .update({
-          department_name:
-            values.departmentName,
+    } = await supabase
+      .from("departments")
+      .update({
+        department_name:
+          values.departmentName,
 
-          department_code:
-            values.departmentCode,
+        department_code:
+          values.departmentCode,
 
-          description:
-            values.description ||
-            null,
+        description:
+          values.description || null,
 
-          status:
-            values.status ===
-            "Active"
-              ? "active"
-              : "inactive",
-        })
-        .eq(
-          "id",
-          id,
-        )
-        .eq(
-          "company_id",
-          companyId,
-        )
-        .select(
-          DEPARTMENT_SELECT,
-        )
-        .maybeSingle();
+        status:
+          values.status === "Active"
+            ? "active"
+            : "inactive",
+      })
+      .eq("id", id)
+      .eq("company_id", companyId)
+      .select(DEPARTMENT_SELECT)
+      .maybeSingle();
 
     if (error) {
       console.error(
@@ -580,10 +616,11 @@ export async function updateDepartment(
         error,
       );
 
-      if (
-        error.code ===
-        "23505"
-      ) {
+      /* -------------------------------------------------------------------- */
+      /* PostgreSQL Unique Violation                                          */
+      /* -------------------------------------------------------------------- */
+
+      if (error.code === "23505") {
         return {
           success: false,
           error:
@@ -628,20 +665,25 @@ export async function updateDepartment(
   }
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* DELETE DEPARTMENT                                                          */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 /**
- * Deletes a department belonging ONLY to the authenticated
- * CompanyAdmin's company.
+ * Deletes a department belonging only to the authenticated user's company.
+ *
+ * Required permission:
+ *
+ * departments.delete
  */
 export async function deleteDepartment(
   id: string,
-): Promise<
-  DepartmentActionResult
-> {
+): Promise<DepartmentActionResult> {
   try {
+    /* ---------------------------------------------------------------------- */
+    /* Validate ID                                                            */
+    /* ---------------------------------------------------------------------- */
+
     if (!id?.trim()) {
       return {
         success: false,
@@ -650,10 +692,28 @@ export async function deleteDepartment(
       };
     }
 
+    /* ---------------------------------------------------------------------- */
+    /* Authentication + Company Context                                      */
+    /* ---------------------------------------------------------------------- */
+
     const {
+      context,
       companyId,
     } =
-      await requireCompanyAdminAccess();
+      await requireDepartmentContext();
+
+    /* ---------------------------------------------------------------------- */
+    /* Authorization                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    await requirePermission(
+      context,
+      "departments.delete",
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* Database                                                               */
+    /* ---------------------------------------------------------------------- */
 
     const supabase =
       await createSupabaseServerClient();
@@ -661,20 +721,13 @@ export async function deleteDepartment(
     const {
       data,
       error,
-    } =
-      await supabase
-        .from("departments")
-        .delete()
-        .eq(
-          "id",
-          id,
-        )
-        .eq(
-          "company_id",
-          companyId,
-        )
-        .select("id")
-        .maybeSingle();
+    } = await supabase
+      .from("departments")
+      .delete()
+      .eq("id", id)
+      .eq("company_id", companyId)
+      .select("id")
+      .maybeSingle();
 
     if (error) {
       console.error(
@@ -716,15 +769,18 @@ export async function deleteDepartment(
   }
 }
 
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 /* TOGGLE DEPARTMENT STATUS                                                   */
-/* -------------------------------------------------------------------------- */
+/* ========================================================================== */
 
 /**
- * Convenience action for enabling/disabling a department.
+ * Toggles a department between active and inactive.
  *
- * This is optional for the UI, but useful when the department table
- * has an Active/Inactive switch.
+ * Required permission:
+ *
+ * departments.update
+ *
+ * The department must belong to the authenticated user's company.
  */
 export async function toggleDepartmentStatus(
   id: string,
@@ -732,6 +788,10 @@ export async function toggleDepartmentStatus(
   DepartmentActionResult<Department>
 > {
   try {
+    /* ---------------------------------------------------------------------- */
+    /* Validate ID                                                            */
+    /* ---------------------------------------------------------------------- */
+
     if (!id?.trim()) {
       return {
         success: false,
@@ -740,40 +800,49 @@ export async function toggleDepartmentStatus(
       };
     }
 
+    /* ---------------------------------------------------------------------- */
+    /* Authentication + Company Context                                      */
+    /* ---------------------------------------------------------------------- */
+
     const {
+      context,
       companyId,
     } =
-      await requireCompanyAdminAccess();
+      await requireDepartmentContext();
+
+    /* ---------------------------------------------------------------------- */
+    /* Authorization                                                          */
+    /* ---------------------------------------------------------------------- */
+
+    await requirePermission(
+      context,
+      "departments.update",
+    );
+
+    /* ---------------------------------------------------------------------- */
+    /* Database                                                               */
+    /* ---------------------------------------------------------------------- */
 
     const supabase =
       await createSupabaseServerClient();
 
     /* ---------------------------------------------------------------------- */
-    /* Get current status                                                     */
+    /* Fetch Current Status                                                   */
     /* ---------------------------------------------------------------------- */
 
     const {
       data: department,
       error: fetchError,
-    } =
-      await supabase
-        .from("departments")
-        .select(
-          `
-            id,
-            company_id,
-            status
-          `,
-        )
-        .eq(
-          "id",
-          id,
-        )
-        .eq(
-          "company_id",
-          companyId,
-        )
-        .maybeSingle();
+    } = await supabase
+      .from("departments")
+      .select(`
+        id,
+        company_id,
+        status
+      `)
+      .eq("id", id)
+      .eq("company_id", companyId)
+      .maybeSingle();
 
     if (fetchError) {
       console.error(
@@ -796,38 +865,31 @@ export async function toggleDepartmentStatus(
       };
     }
 
+    /* ---------------------------------------------------------------------- */
+    /* Calculate Next Status                                                  */
+    /* ---------------------------------------------------------------------- */
+
     const nextStatus =
-      department.status ===
-      "active"
+      department.status === "active"
         ? "inactive"
         : "active";
 
     /* ---------------------------------------------------------------------- */
-    /* Update status                                                          */
+    /* Update Status                                                          */
     /* ---------------------------------------------------------------------- */
 
     const {
       data,
       error,
-    } =
-      await supabase
-        .from("departments")
-        .update({
-          status:
-            nextStatus,
-        })
-        .eq(
-          "id",
-          id,
-        )
-        .eq(
-          "company_id",
-          companyId,
-        )
-        .select(
-          DEPARTMENT_SELECT,
-        )
-        .single();
+    } = await supabase
+      .from("departments")
+      .update({
+        status: nextStatus,
+      })
+      .eq("id", id)
+      .eq("company_id", companyId)
+      .select(DEPARTMENT_SELECT)
+      .single();
 
     if (error) {
       console.error(
