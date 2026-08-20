@@ -70,6 +70,16 @@ export const companyUserCreateSchema = z.object({
     COMPANY_USER_ROLES,
   ),
 
+  /*
+   * The role ID of an existing role from the company's
+   * roles table. This is used for role assignment via
+   * company_user_roles.
+   */
+  roleId: z
+    .string()
+    .uuid("Invalid role ID.")
+    .optional(),
+
   password: z
     .string()
     .min(
@@ -130,6 +140,16 @@ export const companyUserUpdateSchema =
     role: z.enum(
       COMPANY_USER_ROLES,
     ),
+
+    /*
+     * The role ID of an existing role from the company's
+     * roles table. Used for role assignment via
+     * company_user_roles.
+     */
+    roleId: z
+      .string()
+      .uuid("Invalid role ID.")
+      .optional(),
 
     status: z.enum(
       COMPANY_USER_STATUSES,

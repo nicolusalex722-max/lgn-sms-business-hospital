@@ -378,6 +378,13 @@ export type CompanyUserCreateInput = {
   phone: string | null;
 
   role: CompanyUserRole;
+
+  /**
+   * The role ID of an existing role from the company's
+   * roles table. Used for role assignment via
+   * company_user_roles.
+   */
+  roleId?: string;
 };
 
 

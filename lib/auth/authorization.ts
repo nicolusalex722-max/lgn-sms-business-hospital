@@ -7,6 +7,7 @@ import {
 } from "@/lib/db/server";
 
 import type {
+  AuthenticatedUser,
   SystemRole,
   UserTenantContext,
 } from "@/lib/types";
@@ -148,11 +149,14 @@ export function requireRole(
 
 /**
  * Only SuperAdmin is allowed.
+ *
+ * Accepts AuthenticatedUser because SuperAdmin checks
+ * only need the role, not the full tenant context.
  */
 export function requireSuperAdmin(
-  context: UserTenantContext,
+  user: AuthenticatedUser,
 ): void {
-  if (!isSuperAdmin(context)) {
+  if (user.role !== "SuperAdmin") {
     throw new AuthorizationError(
       "Only Super Admin can perform this action.",
     );

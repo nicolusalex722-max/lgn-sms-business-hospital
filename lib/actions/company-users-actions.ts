@@ -5,7 +5,10 @@ import {
   createSupabaseServerClient,
 } from "@/lib/db/server";
 
-import { requireCurrentUser } from "@/lib/auth";
+import {
+  requireCurrentUser,
+  requireUserTenantContext,
+} from "@/lib/auth";
 
 import {
   isCompanyAdmin,
@@ -13,6 +16,8 @@ import {
   requireCompanyAccess,
   requireCompanyManagementAccess,
 } from "@/lib/auth/authorization";
+
+import type { AuthenticatedUser } from "@/lib/types";
 
 import {
   companyUserCreateSchema,
@@ -39,7 +44,9 @@ type CompanyUserDbStatus =
 
 type RoleRow = {
   id: string;
+  company_id: string;
   name: string;
+  status: "active" | "inactive";
 };
 
 type CompanyUserRoleRow = {
@@ -138,14 +145,35 @@ const COMPANY_USER_SELECT = `
 /* -------------------------------------------------------------------------- */
 
 /**
- * Returns the authenticated application user.
+ * Returns the authenticated application user with a valid
+ * company tenant context.
  *
- * Authentication is handled by auth.ts.
+ * This function is intended for company-scoped operations.
+ * It guarantees that companyId exists before returning.
  *
- * Authorization is handled by authorization.ts.
+ * For SuperAdmin operations, use requireCurrentUser() directly
+ * and handle SuperAdmin explicitly.
  */
 async function getAuthorizationContext(): Promise<UserTenantContext> {
-  return requireCurrentUser();
+  return requireUserTenantContext();
+}
+
+/**
+ * Returns the current user and whether they are a SuperAdmin.
+ *
+ * This is used for operations that need to support both
+ * SuperAdmin (system-level) and CompanyAdmin (company-level).
+ */
+async function getCurrentUserWithRole(): Promise<{
+  user: AuthenticatedUser;
+  isSuperAdmin: boolean;
+}> {
+  const user = await requireCurrentUser();
+
+  return {
+    user,
+    isSuperAdmin: user.role === "SuperAdmin",
+  };
 }
 
 /**
@@ -534,51 +562,6 @@ async function getCompanyUserRoles(
   return roleMap;
 }
 
-/**
- * Gets the database role ID for the application
- * company-user role "User".
- */
-async function getUserRoleId(
-  supabase: Awaited<
-    ReturnType<
-      typeof createSupabaseServerClient
-    >
-  >,
-): Promise<string> {
-  const {
-    data,
-    error,
-  } = await supabase
-    .from("roles")
-    .select(
-      "id, name",
-    )
-    .eq(
-      "name",
-      "User",
-    )
-    .maybeSingle<RoleRow>();
-
-  if (error) {
-    console.error(
-      "getUserRoleId error:",
-      error,
-    );
-
-    throw new Error(
-      "Failed to find the User role.",
-    );
-  }
-
-  if (!data) {
-    throw new Error(
-      "The User role does not exist in the roles table.",
-    );
-  }
-
-  return data.id;
-}
-
 /* -------------------------------------------------------------------------- */
 /* Employee Helpers                                                           */
 /* -------------------------------------------------------------------------- */
@@ -746,12 +729,17 @@ export async function getCompanyUsers(): Promise<
   CompanyUserActionResult<CompanyUser[]>
 > {
   try {
-    const context =
-      await getAuthorizationContext();
+    const { user, isSuperAdmin } =
+      await getCurrentUserWithRole();
 
-    requireCompanyUserManagement(
-      context,
-    );
+    if (!isSuperAdmin) {
+      const context =
+        await getAuthorizationContext();
+
+      requireCompanyUserManagement(
+        context,
+      );
+    }
 
     const supabase =
       await createSupabaseServerClient();
@@ -778,22 +766,14 @@ export async function getCompanyUsers(): Promise<
      *
      * Can see users only from their company.
      */
-    if (
-      isCompanyAdmin(context)
-    ) {
-      const companyId =
-        context.companyId;
-
-      if (!companyId) {
-        throw new Error(
-          "Company administrator is not associated with a company.",
-        );
-      }
+    if (!isSuperAdmin) {
+      const context =
+        await getAuthorizationContext();
 
       query =
         query.eq(
           "company_id",
-          companyId,
+          context.companyId,
         );
     }
 
@@ -873,12 +853,17 @@ export async function getCompanyUserById(
       };
     }
 
-    const context =
-      await getAuthorizationContext();
+    const { user, isSuperAdmin } =
+      await getCurrentUserWithRole();
 
-    requireCompanyUserManagement(
-      context,
-    );
+    if (!isSuperAdmin) {
+      const context =
+        await getAuthorizationContext();
+
+      requireCompanyUserManagement(
+        context,
+      );
+    }
 
     const supabase =
       await createSupabaseServerClient();
@@ -925,10 +910,15 @@ export async function getCompanyUserById(
      * This is important for SuperAdmin/CompanyAdmin
      * tenant isolation.
      */
-    requireCompanyUserCompanyAccess(
-      context,
-      data.company_id,
-    );
+    if (!isSuperAdmin) {
+      const context =
+        await getAuthorizationContext();
+
+      requireCompanyUserCompanyAccess(
+        context,
+        data.company_id,
+      );
+    }
 
     const role =
       await getCompanyUserRole(
@@ -977,6 +967,11 @@ export async function createCompanyUser(
     | null = null;
 
   try {
+    /*
+     * Company user creation requires a company context.
+     * SuperAdmin does not have a company context and
+     * must use a different flow to create company users.
+     */
     const context =
       await getAuthorizationContext();
 
@@ -984,23 +979,8 @@ export async function createCompanyUser(
       context,
     );
 
-    /*
-     * The current create schema does not provide
-     * a target companyId.
-     *
-     * Therefore creation must happen inside the
-     * authenticated user's company context.
-     */
     const companyId =
       context.companyId;
-
-    if (!companyId) {
-      return {
-        success: false,
-        error:
-          "A company is required to create a company user.",
-      };
-    }
 
     /*
      * Creating the user is a management operation
@@ -1175,10 +1155,65 @@ export async function createCompanyUser(
     /* Role                                                                   */
     /* ---------------------------------------------------------------------- */
 
-    const userRoleId =
-      await getUserRoleId(
-        supabase,
+    /*
+     * The roleId is supplied by the client and represents
+     * an existing role from the company's roles table.
+     *
+     * We verify it exists and belongs to the same company
+     * before assignment.
+     */
+    const selectedRoleId =
+      values.roleId?.trim();
+
+    if (!selectedRoleId) {
+      return {
+        success: false,
+        error:
+          "A role is required to create a company user.",
+      };
+    }
+
+    const {
+      data: roleData,
+      error: roleError,
+    } = await supabase
+      .from("roles")
+      .select(
+        "id, company_id, name, status",
+      )
+      .eq(
+        "id",
+        selectedRoleId,
+      )
+      .eq(
+        "company_id",
+        companyId,
+      )
+      .maybeSingle<RoleRow>();
+
+    if (roleError) {
+      console.error(
+        "createCompanyUser role lookup error:",
+        roleError,
       );
+
+      return {
+        success: false,
+        error:
+          "Failed to verify the selected role.",
+      };
+    }
+
+    const roleRow =
+      roleData as unknown as RoleRow | null;
+
+    if (!roleRow || roleRow.status !== "active") {
+      return {
+        success: false,
+        error:
+          "The selected role does not exist or is not active in your company.",
+      };
+    }
 
     /* ---------------------------------------------------------------------- */
     /* Auth User                                                              */
@@ -1320,7 +1355,7 @@ export async function createCompanyUser(
       companyUser.id;
 
     /* ---------------------------------------------------------------------- */
-    /* Assign User Role                                                       */
+    /* Assign Selected Role                                                    */
     /* ---------------------------------------------------------------------- */
 
     const {
@@ -1332,7 +1367,7 @@ export async function createCompanyUser(
           createdCompanyUserId,
 
         role_id:
-          userRoleId,
+          selectedRoleId,
       });
 
     if (roleAssignmentError) {
@@ -1456,12 +1491,17 @@ export async function updateCompanyUser(
       };
     }
 
-    const context =
-      await getAuthorizationContext();
+    const { user, isSuperAdmin } =
+      await getCurrentUserWithRole();
 
-    requireCompanyUserManagement(
-      context,
-    );
+    if (!isSuperAdmin) {
+      const context =
+        await getAuthorizationContext();
+
+      requireCompanyUserManagement(
+        context,
+      );
+    }
 
     const validation =
       companyUserUpdateSchema.safeParse(
@@ -1498,7 +1538,8 @@ export async function updateCompanyUser(
           id,
           auth_user_id,
           company_id,
-          employee_id
+          employee_id,
+          status
         `,
       )
       .eq(
@@ -1533,10 +1574,15 @@ export async function updateCompanyUser(
      * company's ID stored in the database,
      * never on a client-provided company ID.
      */
-    requireCompanyUserCompanyManagement(
-      context,
-      existingUser.company_id,
-    );
+    if (!isSuperAdmin) {
+      const context =
+        await getAuthorizationContext();
+
+      requireCompanyUserCompanyManagement(
+        context,
+        existingUser.company_id,
+      );
+    }
 
     /* ---------------------------------------------------------------------- */
     /* Duplicate Email                                                        */
@@ -1583,6 +1629,148 @@ export async function updateCompanyUser(
         error:
           "Another company user already uses this email.",
       };
+    }
+
+    /* ---------------------------------------------------------------------- */
+    /* Role Update                                                            */
+    /* ---------------------------------------------------------------------- */
+
+    const newRoleId =
+      values.roleId?.trim();
+
+    if (newRoleId) {
+      /*
+       * Verify the new role exists and belongs
+       * to the same company.
+       */
+      const {
+        data: newRoleData,
+        error: newRoleError,
+      } = await supabase
+        .from("roles")
+        .select(
+          "id, company_id, status",
+        )
+        .eq(
+          "id",
+          newRoleId,
+        )
+        .eq(
+          "company_id",
+          existingUser.company_id,
+        )
+        .maybeSingle<RoleRow>();
+
+      if (newRoleError) {
+        console.error(
+          "updateCompanyUser role lookup error:",
+          newRoleError,
+        );
+
+        return {
+          success: false,
+          error:
+            "Failed to verify the selected role.",
+        };
+      }
+
+      const newRole =
+        newRoleData as unknown as RoleRow | null;
+
+      if (!newRole || newRole.status !== "active") {
+        return {
+          success: false,
+          error:
+            "The selected role does not exist or is not active in your company.",
+        };
+      }
+
+      /*
+       * Check if the role assignment already exists.
+       */
+      const {
+        data: existingAssignment,
+        error: existingAssignmentError,
+      } = await supabase
+        .from("company_user_roles")
+        .select(
+          "company_user_id, role_id",
+        )
+        .eq(
+          "company_user_id",
+          id,
+        )
+        .eq(
+          "role_id",
+          newRoleId,
+        )
+        .maybeSingle();
+
+      if (existingAssignmentError) {
+        console.error(
+          "updateCompanyUser role assignment check error:",
+          existingAssignmentError,
+        );
+
+        return {
+          success: false,
+          error:
+            "Failed to check existing role assignment.",
+        };
+      }
+
+      if (!existingAssignment) {
+        /*
+         * Remove any existing role assignments for this user
+         * and assign the new role.
+         *
+         * Company users currently have a single role,
+         * so we remove existing assignments before adding
+         * the new one.
+         */
+        const { error: deleteError } =
+          await supabase
+            .from("company_user_roles")
+            .delete()
+            .eq(
+              "company_user_id",
+              id,
+            );
+
+        if (deleteError) {
+          console.error(
+            "updateCompanyUser role delete error:",
+            deleteError,
+          );
+
+          return {
+            success: false,
+            error:
+              "Failed to update role assignment.",
+          };
+        }
+
+        const { error: insertError } =
+          await supabase
+            .from("company_user_roles")
+            .insert({
+              company_user_id: id,
+              role_id: newRoleId,
+            });
+
+        if (insertError) {
+          console.error(
+            "updateCompanyUser role insert error:",
+            insertError,
+          );
+
+          return {
+            success: false,
+            error:
+              "Failed to assign the new role.",
+          };
+        }
+      }
     }
 
     /* ---------------------------------------------------------------------- */
@@ -1701,12 +1889,17 @@ export async function deleteCompanyUser(
       };
     }
 
-    const context =
-      await getAuthorizationContext();
+    const { user, isSuperAdmin } =
+      await getCurrentUserWithRole();
 
-    requireCompanyUserManagement(
-      context,
-    );
+    if (!isSuperAdmin) {
+      const context =
+        await getAuthorizationContext();
+
+      requireCompanyUserManagement(
+        context,
+      );
+    }
 
     const supabase =
       await createSupabaseServerClient();
@@ -1761,10 +1954,15 @@ export async function deleteCompanyUser(
      * Authorization happens using the target
      * company's database value.
      */
-    requireCompanyUserCompanyManagement(
-      context,
-      companyUser.company_id,
-    );
+    if (!isSuperAdmin) {
+      const context =
+        await getAuthorizationContext();
+
+      requireCompanyUserCompanyManagement(
+        context,
+        companyUser.company_id,
+      );
+    }
 
     /* ---------------------------------------------------------------------- */
     /* Delete Role Assignments                                                */
@@ -1886,12 +2084,17 @@ export async function updateCompanyUserStatus(
       };
     }
 
-    const context =
-      await getAuthorizationContext();
+    const { user, isSuperAdmin } =
+      await getCurrentUserWithRole();
 
-    requireCompanyUserManagement(
-      context,
-    );
+    if (!isSuperAdmin) {
+      const context =
+        await getAuthorizationContext();
+
+      requireCompanyUserManagement(
+        context,
+      );
+    }
 
     const supabase =
       await createSupabaseServerClient();
@@ -1943,10 +2146,15 @@ export async function updateCompanyUserStatus(
       };
     }
 
-    requireCompanyUserCompanyManagement(
-      context,
-      existingUser.company_id,
-    );
+    if (!isSuperAdmin) {
+      const context =
+        await getAuthorizationContext();
+
+      requireCompanyUserCompanyManagement(
+        context,
+        existingUser.company_id,
+      );
+    }
 
     /* ---------------------------------------------------------------------- */
     /* Update                                                                 */

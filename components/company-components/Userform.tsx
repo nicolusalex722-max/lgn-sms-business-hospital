@@ -123,21 +123,16 @@ export default function UserForm({ initialValue = null, employees, submitting = 
         phone: phone.trim(),
         displayName: displayName.trim(),
         role: "User",
+        roleId: roleId || undefined,
         password,
       };
 
       const result = await onSubmit(data);
 
-      // if creation returns created user id and a roleId is selected, assign role
-      try {
-        if (result?.success && result?.data?.id && roleId) {
-          const assignRes = await assignRole(result.data.id, roleId);
-          if (!assignRes.success) {
-            setLocalError(assignRes.error ?? "Failed to assign role.");
-          }
-        }
-      } catch (err) {
-        console.error("role assign after create error:", err);
+      if (result?.success) {
+        setLocalError(null);
+      } else if (result?.error) {
+        setLocalError(result.error);
       }
 
       return;
@@ -148,6 +143,7 @@ export default function UserForm({ initialValue = null, employees, submitting = 
       phone: phone.trim(),
       displayName: displayName.trim(),
       role: "User",
+      roleId: roleId || undefined,
       status: status as any,
     };
 

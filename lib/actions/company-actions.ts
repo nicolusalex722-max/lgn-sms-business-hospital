@@ -144,11 +144,7 @@ const COMPANY_SELECT = `
 async function requireCompanyManagementAccess() {
   const currentUser = await requireCurrentUser();
 
-  requireSuperAdmin({
-    userId: currentUser.id,
-    role: currentUser.role,
-    companyId: currentUser.companyId,
-  });
+  requireSuperAdmin(currentUser);
 
   return currentUser;
 }
