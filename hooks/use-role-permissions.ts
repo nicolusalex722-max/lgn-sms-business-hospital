@@ -2,11 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import {
-  getPermissions as getPermissionsAction,
-  getRolePermissions as getRolePermissionsAction,
-  updateRolePermissions as updateRolePermissionsAction,
-} from "@/lib/actions/roles-actions";
+import * as RolesActions from "@/lib/actions/roles-actions";
 
 import type { Permission } from "@/lib/types";
 
@@ -23,7 +19,7 @@ export function useRolePermissions() {
       setLoading(true);
       setError(null);
 
-      const rows = await getPermissionsAction();
+      const rows = await RolesActions.getPermissions();
       setPermissions(rows as any[]);
 
       // Group by module
@@ -46,7 +42,7 @@ export function useRolePermissions() {
   const fetchRolePermissions = useCallback(async (roleId: string) => {
     try {
       setError(null);
-      const rows = await getRolePermissionsAction(roleId);
+      const rows = await RolesActions.getRolePermissions(roleId);
       return rows as any[];
     } catch (err: any) {
       console.error("useRolePermissions fetchRolePermissions error:", err);
@@ -58,7 +54,7 @@ export function useRolePermissions() {
   const saveRolePermissions = useCallback(async (roleId: string, permissionIds: string[]) => {
     try {
       setError(null);
-      const res = await updateRolePermissionsAction(roleId, permissionIds);
+      const res = await RolesActions.updateRolePermissions(roleId, permissionIds);
       return { success: true, data: res };
     } catch (err: any) {
       console.error("useRolePermissions saveRolePermissions error:", err);
