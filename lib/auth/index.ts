@@ -1,7 +1,8 @@
-import { AuthenticationError } from "./auth";
+import { AuthenticationError, AuthorizationError } from "./auth";
 
 export {
   AuthenticationError,
+  AuthorizationError,
   getCurrentUser,
   getUserTenantContext,
   requireCurrentUser,
