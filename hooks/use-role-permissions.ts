@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import * as RolesActions from "@/lib/actions/roles-actions";
-
 import type { Permission } from "@/lib/types";
 
 type PermissionsByModule = Record<string, Permission[]>;
@@ -19,7 +17,8 @@ export function useRolePermissions() {
       setLoading(true);
       setError(null);
 
-      const rows = await RolesActions.getPermissions();
+      const mod: any = await import("@/lib/actions/roles-actions");
+      const rows = await mod.getPermissions();
       setPermissions(rows as any[]);
 
       // Group by module
@@ -42,7 +41,8 @@ export function useRolePermissions() {
   const fetchRolePermissions = useCallback(async (roleId: string) => {
     try {
       setError(null);
-      const rows = await RolesActions.getRolePermissions(roleId);
+      const mod: any = await import("@/lib/actions/roles-actions");
+      const rows = await mod.getRolePermissions(roleId);
       return rows as any[];
     } catch (err: any) {
       console.error("useRolePermissions fetchRolePermissions error:", err);
@@ -54,7 +54,8 @@ export function useRolePermissions() {
   const saveRolePermissions = useCallback(async (roleId: string, permissionIds: string[]) => {
     try {
       setError(null);
-      const res = await RolesActions.updateRolePermissions(roleId, permissionIds);
+      const mod: any = await import("@/lib/actions/roles-actions");
+      const res = await mod.updateRolePermissions(roleId, permissionIds);
       return { success: true, data: res };
     } catch (err: any) {
       console.error("useRolePermissions saveRolePermissions error:", err);
