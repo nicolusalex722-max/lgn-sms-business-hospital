@@ -18,7 +18,6 @@ type CompanyAdminAuthRow = {
 type CompanyUserAuthRow = {
   auth_user_id: string;
   company_id: string;
-  role: "user";
   status: CompanyUserStatusDb;
 };
 
@@ -56,7 +55,7 @@ export class AuthorizationError extends Error {
  * - Uses the authenticated Supabase session.
  * - Does NOT use service-role credentials.
  * - SuperAdmin is identified from server-controlled app_metadata.
- * - CompanyAdmin/User tenant information is resolved from database records.
+ * - Company tenant information is resolved from database records.
  */
 export async function getCurrentUser(): Promise<
   AuthenticatedUser | null
@@ -137,7 +136,6 @@ export async function getCurrentUser(): Promise<
         `
           auth_user_id,
           company_id,
-          role,
           status
         `
       )
@@ -151,6 +149,9 @@ export async function getCurrentUser(): Promise<
     return {
       id: user.id,
       email: user.email ?? "",
+      // Keep SystemRole as 'User' for compatibility. Note: we no longer
+      // read a `role` column from company_users — the RBAC is database-driven
+      // via company_user_roles -> roles -> role_permissions -> permissions.
       role: "User",
       companyId: companyUser.company_id,
     };
