@@ -100,20 +100,26 @@ export async function hasPermission(
  *
  * This performs a strict server-side look-up using JOINs to ensure tenant
  * isolation and to only consider active roles.
+ *
+ * Returns the authenticated company_user id and the authenticated company id.
+ * For SuperAdmin the companyId may be null — callers must handle that case.
  */
 export async function requirePermission(
   permissionKey: string,
-): Promise<{ companyUserId: string; companyId: string } | null> {
+): Promise<{ companyUserId: string; companyId: string | null }> {
   const context = await requireUserTenantContext();
 
   // SuperAdmin (system-level) bypass: preserve existing behavior by allowing
   // SuperAdmin to bypass company-level permissions when appropriate. For
   // tenant-scoped permissions we still prefer explicit matching; here we will
-  // allow SuperAdmin to pass the check.
+  // allow SuperAdmin to pass the check. SuperAdmin may have a null companyId.
   if (context.role === "SuperAdmin") {
     return { companyUserId: context.userId, companyId: context.companyId };
   }
 
+  // For non-superadmin users a company context is required. Narrow the type
+  // systemically by throwing if companyId is missing — after this check
+  // TypeScript understands context.companyId is a string.
   if (!context.companyId) {
     throw new AuthorizationError("This action requires a company context.");
   }
