@@ -3,10 +3,98 @@
 import { Pencil, Trash2 } from "lucide-react";
 import type { CompanyUser } from "@/lib/types";
 
-interface UserTableProps { users: CompanyUser[]; onEdit: (user: CompanyUser) => void; onDelete: (user: CompanyUser) => void; }
-const nameOf = (user: CompanyUser) => user.displayName || [user.employee?.firstName, user.employee?.middleName, user.employee?.lastName].filter(Boolean).join(" ") || "—";
+interface UserTableProps {
+  users: CompanyUser[];
+  onEdit: (user: CompanyUser) => void;
+  onDelete: (user: CompanyUser) => void;
+}
+const nameOf = (user: CompanyUser) =>
+  user.displayName ||
+  [user.employee?.firstName, user.employee?.middleName, user.employee?.lastName]
+    .filter(Boolean)
+    .join(" ") ||
+  "—";
 
 export default function UserTable({ users, onEdit, onDelete }: UserTableProps) {
-  if (!users.length) return <div className="p-10 text-center"><p className="text-sm text-slate-500">No users match your search.</p></div>;
-  return <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr className="border-b border-slate-200"><th className="px-5 py-3.5 text-left font-medium text-slate-500">User</th><th className="px-2 py-3.5 text-left font-medium text-slate-500">Email</th><th className="px-2 py-3.5 text-left font-medium text-slate-500">Phone</th><th className="px-2 py-3.5 text-left font-medium text-slate-500">Role</th><th className="px-2 py-3.5 text-left font-medium text-slate-500">Status</th><th className="px-5 py-3.5 text-right font-medium text-slate-500">Actions</th></tr></thead><tbody>{users.map((user) => <tr key={user.id} className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50"><td className="px-5 py-4"><p className="font-semibold text-slate-800">{nameOf(user)}</p><p className="text-xs text-slate-400">@{user.username}</p></td><td className="px-2 py-4 text-slate-600">{user.email}</td><td className="px-2 py-4 text-slate-500">{user.phone || "—"}</td><td className="px-2 py-4"><span className="inline-flex rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">{user.role}</span></td><td className="px-2 py-4"><span className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${user.status === "Active" ? "bg-emerald-100 text-emerald-700" : user.status === "Suspended" ? "bg-rose-100 text-rose-700" : "bg-slate-200 text-slate-600"}`}>{user.status}</span></td><td className="px-5 py-4"><div className="flex justify-end gap-2"><button type="button" onClick={() => onEdit(user)} aria-label={`Edit ${nameOf(user)}`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"><Pencil className="h-3.5 w-3.5" /></button><button type="button" onClick={() => onDelete(user)} aria-label={`Delete ${nameOf(user)}`} className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-rose-50 hover:text-rose-600"><Trash2 className="h-3.5 w-3.5" /></button></div></td></tr>)}</tbody></table></div>;
+  if (!users.length)
+    return (
+      <div className="p-10 text-center">
+        <p className="text-sm text-slate-500">No users match your search.</p>
+      </div>
+    );
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="border-b border-slate-200">
+            <th className="px-5 py-3.5 text-left font-medium text-slate-500">
+              User
+            </th>
+            <th className="px-2 py-3.5 text-left font-medium text-slate-500">
+              Email
+            </th>
+            <th className="px-2 py-3.5 text-left font-medium text-slate-500">
+              Phone
+            </th>
+            <th className="px-2 py-3.5 text-left font-medium text-slate-500">
+              Role
+            </th>
+            <th className="px-2 py-3.5 text-left font-medium text-slate-500">
+              Status
+            </th>
+            <th className="px-5 py-3.5 text-right font-medium text-slate-500">
+              Actions
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {users.map((user) => (
+            <tr
+              key={user.id}
+              className="border-b border-slate-100 last:border-b-0 hover:bg-slate-50"
+            >
+              <td className="px-5 py-4">
+                <p className="font-semibold text-slate-800">{nameOf(user)}</p>
+                <p className="text-xs text-slate-400">@{user.username}</p>
+              </td>
+              <td className="px-2 py-4 text-slate-600">{user.email}</td>
+              <td className="px-2 py-4 text-slate-500">{user.phone || "—"}</td>
+              <td className="px-2 py-4">
+                <span className="inline-flex rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-semibold text-slate-700">
+                  {user.role}
+                </span>
+              </td>
+              <td className="px-2 py-4">
+                <span
+                  className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${user.status === "Active" ? "bg-emerald-100 text-emerald-700" : user.status === "Suspended" ? "bg-rose-100 text-rose-700" : "bg-slate-200 text-slate-600"}`}
+                >
+                  {user.status}
+                </span>
+              </td>
+              <td className="px-5 py-4">
+                <div className="flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onEdit(user)}
+                    aria-label={`Edit ${nameOf(user)}`}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white hover:bg-indigo-700"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onDelete(user)}
+                    aria-label={`Delete ${nameOf(user)}`}
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-rose-50 hover:text-rose-600"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 }

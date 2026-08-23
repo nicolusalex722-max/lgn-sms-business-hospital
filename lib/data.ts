@@ -72,7 +72,7 @@ export function seedAccounts(): Account[] {
 }
 
 
-import type { Book, Branch, BookRequest, Loan, LibraryPolicy } from "./types";
+import type { Book, BookRequest, Loan, LibraryPolicy } from "./types";
 
 export const CATEGORIES = [
   "Fiction",
