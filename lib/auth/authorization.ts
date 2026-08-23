@@ -3,7 +3,7 @@ import {
 } from "./auth";
 
 import {
-  createSupabaseServerClient,
+  createSupabaseAdminClient,
 } from "@/lib/db/server";
 
 import type {
@@ -364,77 +364,46 @@ async function getUserPermissionKeys(
   context: UserTenantContext,
 ): Promise<Set<string>> {
   /* ------------------------------------------------------------------------ */
-  /* SuperAdmin                                                              */
+  /* System-level roles                                                       */
   /* ------------------------------------------------------------------------ */
 
-  /**
-   * SuperAdmin has global access.
-   *
-   * We do not need to resolve company roles
-   * for SuperAdmin.
-   */
   if (isSuperAdmin(context)) {
     return new Set(["*"]);
   }
 
-  /* ------------------------------------------------------------------------ */
-  /* CompanyAdmin                                                             */
-  /* ------------------------------------------------------------------------ */
-
-  /**
-   * CompanyAdmin has full access to their company.
-   *
-   * We do not need to resolve company roles
-   * for CompanyAdmin.
-   */
   if (isCompanyAdmin(context)) {
     return new Set(["*"]);
   }
 
   /* ------------------------------------------------------------------------ */
-  /* Company Context                                                          */
+  /* Company context                                                          */
   /* ------------------------------------------------------------------------ */
 
-  const companyId =
-    requireCompanyContext(context);
+  const companyId = requireCompanyContext(context);
 
   /* ------------------------------------------------------------------------ */
-  /* Database Client                                                          */
+  /* Admin client                                                             */
   /* ------------------------------------------------------------------------ */
 
-  const supabase =
-    await createSupabaseServerClient();
+  const supabase = await createSupabaseAdminClient();
 
   /* ------------------------------------------------------------------------ */
-  /* Resolve Company User                                                     */
+  /* 1. Resolve company_users                                                 */
   /* ------------------------------------------------------------------------ */
 
-  /**
-   * UserTenantContext.userId is the Supabase
-   * auth.users.id.
-   *
-   * company_users.auth_user_id contains the
-   * same value.
-   */
   const {
     data: companyUser,
     error: companyUserError,
   } = await supabase
     .from("company_users")
-    .select("id")
-    .eq(
-      "auth_user_id",
-      context.userId,
-    )
-    .eq(
-      "company_id",
-      companyId,
-    )
+    .select("id, company_id, status")
+    .eq("auth_user_id", context.userId)
+    .eq("company_id", companyId)
     .maybeSingle();
 
   if (companyUserError) {
     console.error(
-      "getUserPermissionKeys company user error:",
+      "getUserPermissionKeys: company_users lookup failed:",
       companyUserError,
     );
 
@@ -444,42 +413,172 @@ async function getUserPermissionKeys(
   }
 
   if (!companyUser) {
+    console.error(
+      "getUserPermissionKeys: no company_user found",
+      {
+        authUserId: context.userId,
+        companyId,
+      },
+    );
+
     throw new AuthorizationError(
       "You are not associated with this company.",
     );
   }
 
+  if (companyUser.status !== "active") {
+    throw new AuthorizationError(
+      "Your company account is not active.",
+    );
+  }
+
   /* ------------------------------------------------------------------------ */
-  /* Resolve Roles + Permissions                                              */
+  /* 2. Resolve assigned roles                                                */
   /* ------------------------------------------------------------------------ */
 
   const {
-    data: roleRows,
-    error: roleError,
+    data: assignments,
+    error: assignmentsError,
   } = await supabase
     .from("company_user_roles")
-    .select(`
-      role_id,
-      roles!inner (
-        id,
-        name,
-        status,
-        role_permissions (
-          permission:permissions (
-            permission_key
-          )
-        )
-      )
-    `)
-    .eq(
-      "company_user_id",
-      companyUser.id,
+    .select("role_id")
+    .eq("company_user_id", companyUser.id);
+
+  if (assignmentsError) {
+    console.error(
+      "getUserPermissionKeys: role assignment lookup failed:",
+      assignmentsError,
     );
 
-  if (roleError) {
+    throw new AuthorizationError(
+      "Unable to resolve your roles.",
+    );
+  }
+
+  if (!assignments || assignments.length === 0) {
+    console.warn(
+      "getUserPermissionKeys: user has no assigned roles",
+      {
+        authUserId: context.userId,
+        companyUserId: companyUser.id,
+        companyId,
+      },
+    );
+
+    return new Set<string>();
+  }
+
+  const roleIds = assignments
+    .map((row) => row.role_id)
+    .filter(Boolean);
+
+  /* ------------------------------------------------------------------------ */
+  /* 3. Resolve active roles belonging to this company                        */
+  /* ------------------------------------------------------------------------ */
+
+  const {
+    data: roles,
+    error: rolesError,
+  } = await supabase
+    .from("roles")
+    .select("id, name, company_id, status")
+    .in("id", roleIds)
+    .eq("company_id", companyId)
+    .eq("status", "active");
+
+  if (rolesError) {
     console.error(
-      "getUserPermissionKeys role error:",
-      roleError,
+      "getUserPermissionKeys: roles lookup failed:",
+      rolesError,
+    );
+
+    throw new AuthorizationError(
+      "Unable to resolve your active roles.",
+    );
+  }
+
+  if (!roles || roles.length === 0) {
+    console.warn(
+      "getUserPermissionKeys: no active company roles found",
+      {
+        authUserId: context.userId,
+        companyUserId: companyUser.id,
+        companyId,
+        roleIds,
+      },
+    );
+
+    return new Set<string>();
+  }
+
+  const activeRoleIds = roles.map(
+    (role) => role.id,
+  );
+
+  /* ------------------------------------------------------------------------ */
+  /* 4. Resolve role_permissions                                              */
+  /* ------------------------------------------------------------------------ */
+
+  const {
+    data: rolePermissions,
+    error: rolePermissionsError,
+  } = await supabase
+    .from("role_permissions")
+    .select("role_id, permission_id")
+    .in("role_id", activeRoleIds);
+
+  if (rolePermissionsError) {
+    console.error(
+      "getUserPermissionKeys: role_permissions lookup failed:",
+      rolePermissionsError,
+    );
+
+    throw new AuthorizationError(
+      "Unable to resolve your role permissions.",
+    );
+  }
+
+  if (
+    !rolePermissions ||
+    rolePermissions.length === 0
+  ) {
+    console.warn(
+      "getUserPermissionKeys: active roles have no permissions",
+      {
+        authUserId: context.userId,
+        companyUserId: companyUser.id,
+        companyId,
+        activeRoleIds,
+      },
+    );
+
+    return new Set<string>();
+  }
+
+  const permissionIds = Array.from(
+    new Set(
+      rolePermissions
+        .map((row) => row.permission_id)
+        .filter(Boolean),
+    ),
+  );
+
+  /* ------------------------------------------------------------------------ */
+  /* 5. Resolve permissions                                                   */
+  /* ------------------------------------------------------------------------ */
+
+  const {
+    data: permissions,
+    error: permissionsError,
+  } = await supabase
+    .from("permissions")
+    .select("id, permission_key")
+    .in("id", permissionIds);
+
+  if (permissionsError) {
+    console.error(
+      "getUserPermissionKeys: permissions lookup failed:",
+      permissionsError,
     );
 
     throw new AuthorizationError(
@@ -487,57 +586,50 @@ async function getUserPermissionKeys(
     );
   }
 
-  const permissions =
-    new Set<string>();
-
-  const rows =
-    (roleRows ?? []) as unknown as CompanyUserRoleRow[];
-
   /* ------------------------------------------------------------------------ */
-  /* Collect Permissions                                                      */
+  /* 6. Build permission set                                                  */
   /* ------------------------------------------------------------------------ */
 
-  for (const row of rows) {
-    const role = row.role;
+  const permissionKeys = new Set<string>();
 
-    if (!role) {
-      continue;
-    }
+  for (const permission of permissions ?? []) {
+    const key =
+      permission.permission_key?.trim();
 
-    /*
-     * Inactive roles must never grant permissions.
-     */
-    if (
-      role.status !== "active"
-    ) {
-      continue;
-    }
-
-    for (
-      const rolePermission
-      of role.role_permissions ?? []
-    ) {
-      const permission =
-        rolePermission.permission;
-
-      if (!permission) {
-        continue;
-      }
-
-      const permissionKey =
-        permission.permission_key?.trim();
-
-      if (!permissionKey) {
-        continue;
-      }
-
-      permissions.add(
-        permissionKey,
-      );
+    if (key) {
+      permissionKeys.add(key);
     }
   }
 
-  return permissions;
+  /* ------------------------------------------------------------------------ */
+  /* Debug logging                                                            */
+  /* ------------------------------------------------------------------------ */
+
+  console.log(
+    "getUserPermissionKeys: resolved permissions",
+    {
+      authUserId: context.userId,
+      companyUserId: companyUser.id,
+      companyId,
+
+      assignedRoleIds: roleIds,
+
+      activeRoles: roles.map((role) => ({
+        id: role.id,
+        name: role.name,
+        companyId: role.company_id,
+        status: role.status,
+      })),
+
+      permissionCount: permissionKeys.size,
+
+      permissions: Array.from(
+        permissionKeys,
+      ).sort(),
+    },
+  );
+
+  return permissionKeys;
 }
 
 /* ========================================================================== */

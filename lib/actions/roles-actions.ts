@@ -2,6 +2,7 @@
 
 import { createSupabaseServerClient } from "@/lib/db/server";
 import {
+  AuthenticationError,
   AuthorizationError,
   requireUserTenantContext,
 } from "@/lib/auth";
@@ -594,13 +595,29 @@ export async function getPermissions(): Promise<
   Permission[]
 > {
   /**
-   * Permissions are global definitions.
+   * Permissions are GLOBAL system definitions, not company-scoped data.
    *
-   * We still require an authenticated tenant context before exposing them.
+   * They must be readable by any authenticated user (CompanyAdmin,
+   * CompanyUser, and SuperAdmin alike). We therefore intentionally do NOT
+   * call requireCompanyContextOrSuperAdmin() here.
+   *
+   * That helper throws for SuperAdmin (getUserTenantContext returns null)
+   * and for any user that lacks a company_admins/company_users row, which
+   * previously caused getPermissions() to throw and the UI to silently
+   * display "No permissions available." even though 28 records existed.
+   *
+   * We only verify that the request is authenticated.
    */
-  await requireCompanyContextOrSuperAdmin();
-
   const supabase = await createSupabaseServerClient();
+
+  const {
+    data: authData,
+    error: authError,
+  } = await supabase.auth.getUser();
+
+  if (authError || !authData.user) {
+    throw new AuthenticationError();
+  }
 
   const {
     data,

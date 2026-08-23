@@ -1040,7 +1040,15 @@ export default function CompanyAccessRolesTab() {
               </span>
             </div>
           </div>
-        ) : roles.length === 0 ? null : permissions.length === 0 ? (
+        ) : roles.length === 0 ? null : permissionsError ? (
+          <div className="rounded-xl border border-dashed border-rose-300 bg-rose-50 p-10 text-center">
+            <ShieldCheck className="mx-auto h-8 w-8 text-rose-300" />
+
+            <p className="mt-3 text-sm font-medium text-rose-700">
+              Failed to load permissions: {permissionsError}
+            </p>
+          </div>
+        ) : permissions.length === 0 ? (
           <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-10 text-center">
             <ShieldCheck className="mx-auto h-8 w-8 text-slate-300" />
 

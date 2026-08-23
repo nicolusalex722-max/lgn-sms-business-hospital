@@ -1,208 +1,252 @@
 import { createSupabaseServerClient } from "@/lib/db/server";
-import { AuthorizationError, requireUserTenantContext } from "./auth";
+import {
+  AuthorizationError,
+  requireUserTenantContext,
+} from "./auth";
 
 /**
- * Centralized permission keys used by the application.
+ * Centralized permission keys.
  *
  * IMPORTANT:
- * - These values must match the permission_key column in the `permissions` table.
- * - Prefer adding keys here only after confirming they exist in the DB.
+ * These values MUST exactly match permissions.permission_key
+ * in the database.
+ *
+ * The database uses:
+ *   view
+ *   create
+ *   edit
+ *   delete
+ *
+ * It does NOT use "update".
  */
 export const PERMISSIONS = {
+  // Employees
   EMPLOYEES_VIEW: "employees.view",
   EMPLOYEES_CREATE: "employees.create",
-  EMPLOYEES_UPDATE: "employees.update",
+  EMPLOYEES_EDIT: "employees.edit",
   EMPLOYEES_DELETE: "employees.delete",
 
+  // Companies
+  COMPANIES_VIEW: "companies.view",
+  COMPANIES_CREATE: "companies.create",
+  COMPANIES_EDIT: "companies.edit",
+  COMPANIES_DELETE: "companies.delete",
+
+  // Departments
   DEPARTMENTS_VIEW: "departments.view",
   DEPARTMENTS_CREATE: "departments.create",
-  DEPARTMENTS_UPDATE: "departments.update",
+  DEPARTMENTS_EDIT: "departments.edit",
   DEPARTMENTS_DELETE: "departments.delete",
 
+  // Branches
+  BRANCHES_VIEW: "branches.view",
+  BRANCHES_CREATE: "branches.create",
+  BRANCHES_EDIT: "branches.edit",
+  BRANCHES_DELETE: "branches.delete",
+
+  // Products
+  PRODUCTS_VIEW: "products.view",
+  PRODUCTS_CREATE: "products.create",
+  PRODUCTS_EDIT: "products.edit",
+  PRODUCTS_DELETE: "products.delete",
+
+  // Subscription Plans
+  SUBSCRIPTION_PLANS_VIEW: "subscription_plans.view",
+  SUBSCRIPTION_PLANS_CREATE: "subscription_plans.create",
+  SUBSCRIPTION_PLANS_EDIT: "subscription_plans.edit",
+  SUBSCRIPTION_PLANS_DELETE: "subscription_plans.delete",
+
+  // Roles
   ROLES_VIEW: "roles.view",
   ROLES_CREATE: "roles.create",
-  ROLES_UPDATE: "roles.update",
+  ROLES_EDIT: "roles.edit",
   ROLES_DELETE: "roles.delete",
-
-  PERMISSIONS_VIEW: "permissions.view",
-  PERMISSIONS_MANAGE: "permissions.manage",
 } as const;
 
-export type PermissionKey = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
-
-/* -------------------------------------------------------------------------- */
-/* Permission helpers                                                          */
-/* -------------------------------------------------------------------------- */
+export type PermissionKey =
+  (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
 
 /**
- * Check if the authenticated user has the given permission in their company.
+ * Check whether the current company user has a specific permission.
  *
- * Returns true if the permission is granted by ANY active role assigned to the
- * authenticated company user.
+ * This function is intentionally strict:
+ *
+ * company_user_roles
+ *      ↓
+ * roles
+ *      ↓
+ * role_permissions
+ *      ↓
+ * permissions
+ *
+ * The role must:
+ * - belong to the current company
+ * - be active
+ *
+ * The permission must:
+ * - exist
+ * - be assigned to that role
  */
+
+/**
+ * Runtime shape of the `hasPermission` query result.
+ *
+ * NOTE:
+ * Supabase's client (without a generated `Database` generic) types every
+ * embedded relation as an array. In reality:
+ *   - `role:roles!inner` is a to-one relation -> a single object at runtime.
+ *   - `permission:permissions` is a to-one relation -> a single object at runtime.
+ *   - `role_permissions` is a to-many relation -> an array at runtime.
+ *
+ * We declare the real runtime shape here and cast the query result to it so
+ * the type checker matches what Supabase actually returns.
+ */
+type RolePermissionQueryRow = {
+  role: {
+    id: string;
+    company_id: string;
+    status: string;
+    role_permissions: Array<{
+      permission: { permission_key: string } | null;
+    }>;
+  } | null;
+};
+
 export async function hasPermission(
   userCompanyUserId: string,
   companyId: string,
-  permissionKey: string,
+  permissionKey: PermissionKey,
 ): Promise<boolean> {
   const supabase = await createSupabaseServerClient();
 
   const { data, error } = await supabase
     .from("company_user_roles")
-    .select(
-      `
-      role_id (
+    .select(`
+      role:roles!inner (
         id,
         company_id,
         status,
-        role_permissions(permission_id ( permissions ( permission_key ) ) )
+        role_permissions (
+          permission:permissions (
+            permission_key
+          )
+        )
       )
-    `,
-      { count: "exact", head: false }
-    )
+    `)
     .eq("company_user_id", userCompanyUserId)
-    .limit(1)
-    .maybeSingle();
+    .eq("roles.company_id", companyId)
+    .eq("roles.status", "active");
 
   if (error) {
-    console.error("hasPermission error:", error);
+    console.error("hasPermission database error:", error);
     return false;
   }
 
-  // Note: this query is a convenience. The authoritative permission check should
-  // be performed using a strict JOIN chain to avoid accidental cross-tenant
-  // matches. We'll implement the strict check in requirePermission below.
-
-  if (!data) {
+  if (!data || data.length === 0) {
     return false;
   }
 
-  // Flatten and look for permissionKey in the nested payload (best-effort).
-  try {
-    const role = (data as any).role;
+  const rows = data as unknown as RolePermissionQueryRow[];
 
-    if (!role || role.status !== "active") return false;
+  for (const assignment of rows) {
+    const role = assignment.role;
 
-    const permissions = (role.role_permissions ?? [])
-      .map((rp: any) => rp.permission_id?.permissions?.permission_key)
-      .filter(Boolean);
+    if (!role) {
+      continue;
+    }
 
-    return permissions.includes(permissionKey);
-  } catch (err) {
-    console.error("hasPermission unexpected error:", err);
-    return false;
+    for (const rolePermission of role.role_permissions ?? []) {
+      const permission = rolePermission.permission;
+
+      if (permission?.permission_key === permissionKey) {
+        return true;
+      }
+    }
   }
+
+  return false;
 }
 
 /**
- * Requires that the current authenticated user has the specified permission.
- * Throws AuthorizationError if the permission is not granted.
+ * Require the current authenticated user to have a permission.
  *
- * This performs a strict server-side look-up using JOINs to ensure tenant
- * isolation and to only consider active roles.
+ * Throws AuthorizationError when permission is not granted.
  *
- * Returns the authenticated company_user id and the authenticated company id.
- * For SuperAdmin the companyId may be null — callers must handle that case.
+ * Returns the authenticated company-user context after authorization succeeds.
  */
 export async function requirePermission(
-  permissionKey: string,
-): Promise<{ companyUserId: string; companyId: string | null }> {
+  permissionKey: PermissionKey,
+): Promise<{
+  companyUserId: string;
+  companyId: string | null;
+}> {
   const context = await requireUserTenantContext();
 
-  // SuperAdmin (system-level) bypass: preserve existing behavior by allowing
-  // SuperAdmin to bypass company-level permissions when appropriate. For
-  // tenant-scoped permissions we still prefer explicit matching; here we will
-  // allow SuperAdmin to pass the check. SuperAdmin may have a null companyId.
+  /*
+   * SuperAdmin
+   *
+   * A SuperAdmin operates at system level and does not need
+   * a company-level role assignment.
+   */
   if (context.role === "SuperAdmin") {
-    return { companyUserId: context.userId, companyId: context.companyId };
+    return {
+      companyUserId: context.userId,
+      companyId: context.companyId,
+    };
   }
-
-  // CompanyAdmin (tenant administrator) bypass: CompanyAdmins have complete
-  // control over their company tenant, so we allow them to pass the permission
-  // check as well, while maintaining company context validation.
-  if (context.role === "CompanyAdmin") {
-    return { companyUserId: context.userId, companyId: context.companyId };
-  }
-
-  // For non-superadmin users a company context is required. Narrow the type
-  // systemically by throwing if companyId is missing — after this check
-  // TypeScript understands context.companyId is a string.
-  if (!context.companyId) {
-    throw new AuthorizationError("This action requires a company context.");
-  }
-
-  const supabase = await createSupabaseServerClient();
 
   /*
-   * Strict permission check implementing the chain:
-   * company_user_roles -> roles (active, same company) -> role_permissions -> permissions
+   * CompanyAdmin
+   *
+   * Company administrators have full access within their company.
    */
-  const sql = `
-    SELECT p.permission_key
-    FROM company_user_roles cur
-    JOIN roles r ON cur.role_id = r.id
-    JOIN role_permissions rp ON r.id = rp.role_id
-    JOIN permissions p ON rp.permission_id = p.id
-    WHERE cur.company_user_id = $1
-      AND r.company_id = $2
-      AND r.status = 'active'
-      AND p.permission_key = $3
-    LIMIT 1
-  `;
-
-  const { data, error } = await supabase.rpc("exec_sql", { sql, params: [context.userId, context.companyId, permissionKey] });
-
-  // If the project does not provide an exec_sql RPC, fall back to PostgREST
-  // style query using joins (note: supabase-js may not support arbitrary SQL
-  // via RPC without a server-side function). We'll attempt a join query now.
-
-  if (error) {
-    console.warn("requirePermission.exec_sql failed, falling back to join query:", error);
-
-    const { data: joinData, error: joinError } = await supabase
-      .from("company_user_roles")
-      .select(
-        `
-          cur:company_user_id,
-          role:roles!inner(id, company_id, status, role_permissions!inner(permission_id ( permissions!inner(permission_key) )))
-        `
-      )
-      .eq("company_user_id", context.userId)
-      .eq("roles.company_id", context.companyId)
-      .eq("roles.status", "active")
-      .limit(1);
-
-    if (joinError) {
-      console.error("requirePermission join query failed:", joinError);
-      throw new AuthorizationError("You do not have permission to perform this action.");
+  if (context.role === "CompanyAdmin") {
+    if (!context.companyId) {
+      throw new AuthorizationError(
+        "Company administrator does not have a company context.",
+      );
     }
 
-    if (!joinData || (joinData as any[]).length === 0) {
-      throw new AuthorizationError("You do not have permission to perform this action.");
-    }
-
-    // inspect nested permission entries for the requested permissionKey
-    try {
-      const nested = (joinData as any[])[0];
-      const role = nested.role;
-      const rps = role.role_permissions ?? [];
-      const found = rps.some((rp: any) => rp.permission_id?.permissions?.permission_key === permissionKey);
-
-      if (!found) {
-        throw new AuthorizationError("You do not have permission to perform this action.");
-      }
-
-      return { companyUserId: context.userId, companyId: context.companyId };
-    } catch (err) {
-      console.error("requirePermission nested parse error:", err);
-      throw new AuthorizationError("You do not have permission to perform this action.");
-    }
+    return {
+      companyUserId: context.userId,
+      companyId: context.companyId,
+    };
   }
 
-  // If exec_sql succeeded, inspect data
-  if (!data || (data as any[]).length === 0) {
-    throw new AuthorizationError("You do not have permission to perform this action.");
+  /*
+   * Normal company user
+   *
+   * A company context is mandatory.
+   */
+  if (!context.companyId) {
+    throw new AuthorizationError(
+      "This action requires a company context.",
+    );
   }
 
-  return { companyUserId: context.userId, companyId: context.companyId };
+  /*
+   * IMPORTANT:
+   *
+   * We use the authenticated user's ID from the tenant context
+   * as the company_user_id.
+   *
+   * If your requireUserTenantContext() returns an auth.users ID
+   * instead of company_user.id, this MUST be adjusted.
+   */
+  const allowed = await hasPermission(
+    context.userId,
+    context.companyId,
+    permissionKey,
+  );
+
+  if (!allowed) {
+    throw new AuthorizationError(
+      "You do not have permission to perform this action.",
+    );
+  }
+
+  return {
+    companyUserId: context.userId,
+    companyId: context.companyId,
+  };
 }
