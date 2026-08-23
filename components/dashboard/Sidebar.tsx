@@ -21,6 +21,8 @@ import {
   Briefcase,
   BookOpen,
 } from "lucide-react";
+import { logoutAdmin } from "@/lib/actions/auth-actions";
+import { Button } from "../ui/button";
 
 /**
  * ============================================================
@@ -616,19 +618,28 @@ export default function Sidebar({ user }: SidebarProps) {
 
         {/* Logout */}
 
-        <button
-          type="button"
-          onClick={() => {
-            console.log("logout clicked");
-          }}
-          className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-slate-300 hover:bg-indigo-500 hover:text-white transition-colors"
-        >
-          <LogOut className="w-5 h-5 shrink-0" />
+            <form action={logoutAdmin}>
 
-          <span className="text-sm font-medium">
-            Logout
-          </span>
-        </button>
+              <Button
+                type="submit"
+                variant="ghost"
+                className="
+                  w-full
+                  justify-start
+                  gap-3
+                  rounded-lg
+                  text-destructive
+                  hover:text-destructive
+                "
+              >
+
+                <LogOut className="h-4 w-4" />
+
+                Logout
+
+              </Button>
+
+            </form>
       </div>
     </div>
   );
